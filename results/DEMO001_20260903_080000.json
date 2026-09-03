@@ -1,0 +1,66 @@
+{
+  "subject": {
+    "id": "DEMO001",
+    "birthYearMonth": "2019-03",
+    "gender": "female",
+    "examiner": "박언어치료사"
+  },
+  "responses": [
+    {
+      "itemId": 1,
+      "wordClass": "noun",
+      "category": "과일",
+      "target": "사과",
+      "selectedPosition": 3,
+      "selectedWord": "사과",
+      "role": "tgt",
+      "correct": true,
+      "rtMs": 1800
+    },
+    {
+      "itemId": 2,
+      "wordClass": "noun",
+      "category": "과일",
+      "target": "포도",
+      "selectedPosition": 2,
+      "selectedWord": "수박",
+      "role": "sem",
+      "correct": false,
+      "rtMs": 2200
+    },
+    {
+      "itemId": 3,
+      "wordClass": "noun",
+      "category": "과일",
+      "target": "파인애플",
+      "selectedPosition": 4,
+      "selectedWord": "파인애플",
+      "role": "tgt",
+      "correct": true,
+      "rtMs": 1500
+    },
+    {
+      "itemId": 4,
+      "wordClass": "noun",
+      "category": "채소",
+      "target": "옥수수",
+      "selectedPosition": 3,
+      "selectedWord": "바나나",
+      "role": "vis",
+      "correct": false,
+      "rtMs": 2600
+    },
+    {
+      "itemId": 5,
+      "wordClass": "noun",
+      "category": "교통기관",
+      "target": "버스",
+      "selectedPosition": 1,
+      "selectedWord": "버스",
+      "role": "tgt",
+      "correct": true,
+      "rtMs": 1200
+    }
+  ],
+  "savedAt": "2026-09-03T08:00:00.000Z"
+}
