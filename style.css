@@ -97,6 +97,62 @@ html, body {
 .btn-ghost { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border); }
 .btn-ghost:hover { background: #eceff3; }
 .btn-lg { width: 100%; padding: 13px; font-size: 1.05rem; }
+.btn-sm { padding: 6px 12px; font-size: 0.82rem; }
+.btn-icon { white-space: nowrap; }
+
+.card-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+/* ---------- Settings modal ---------- */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 30, 50, 0.45);
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 20px;
+}
+.modal-overlay.active { display: flex; }
+.modal-card {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  padding: 32px 36px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-card h2 { margin: 0 0 8px; font-size: 1.25rem; }
+.modal-desc { color: var(--color-text-muted); font-size: 0.85rem; line-height: 1.5; margin: 0 0 18px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.notice-warn { background: #fff6e8; border-color: #f5dfb5; color: #7a5b1e; }
+
+.status-msg {
+  font-size: 0.85rem;
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+.status-msg:not(:empty) {
+  padding: 10px 14px;
+  margin: 10px 0;
+}
+.status-msg.status-success { background: #eafaf0; color: #1f9d55; border: 1px solid #bfe9cf; }
+.status-msg.status-error { background: #fdecec; color: #c53030; border: 1px solid #f3bcbc; }
+.status-msg.status-info { background: #eef3ff; color: #33507a; border: 1px solid #d7e2fb; }
+
+/* ---------- Archive screen ---------- */
+#archive-table td, #archive-table th { white-space: normal; }
+.archive-empty-row td { text-align: center; color: var(--color-text-muted); padding: 24px; }
 
 /* ---------- Test screen ---------- */
 #screen-test { padding: 20px 24px 32px; }

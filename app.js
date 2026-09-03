@@ -9,6 +9,7 @@ const state = {
   currentIndex: 0,
   responses: [],       // 문항별 반응 기록
   itemStartTime: 0,
+  viewingArchive: false, // true면 GitHub에서 불러온 과거 결과를 보는 중
 };
 
 const VERB_TYPE_LABEL = {
@@ -264,12 +265,17 @@ function computeResults() {
 }
 
 function finishTest() {
+  state.viewingArchive = false;
   const results = computeResults();
   renderResults(results);
   showScreen("screen-results");
 }
 
 function renderResults(results) {
+  document.getElementById("results-save-status").className = "status-msg";
+  document.getElementById("results-save-status").textContent = "";
+  document.getElementById("btn-back-to-archive").style.display = state.viewingArchive ? "" : "none";
+
   const subj = state.subject;
   document.getElementById("results-subject-line").textContent =
     `피검자 ID: ${subj.id}` +
@@ -295,7 +301,9 @@ function renderDetailTable() {
     const tr = document.createElement("tr");
     const roleTag = r.role === "none"
       ? `<span class="tag tag-none">무반응</span>`
-      : `<span class="tag ${ROLE_TAG_CLASS[r.role]}">${ROLE_LABEL[r.role]}${r.correct ? " (정답)" : ""}</span>`;
+      : r.correct
+        ? `<span class="tag tag-none">-</span>`
+        : `<span class="tag ${ROLE_TAG_CLASS[r.role]}">${ROLE_LABEL[r.role]}</span>`;
     tr.innerHTML = `
       <td>${r.itemId}</td>
       <td>${WORD_CLASS_LABEL[r.wordClass]}</td>
@@ -482,7 +490,7 @@ document.getElementById("btn-export-excel").addEventListener("click", () => {
     r.selectedPosition ?? "",
     r.selectedWord ?? "무반응",
     r.role,
-    r.role === "none" ? "무반응" : ROLE_LABEL[r.role],
+    r.role === "none" ? "무반응" : (r.correct ? "-" : ROLE_LABEL[r.role]),
     r.correct ? "정답" : "오답",
     r.rtMs ?? "",
   ]);
@@ -543,6 +551,226 @@ document.getElementById("btn-restart").addEventListener("click", () => {
   state.items = [];
   state.currentIndex = 0;
   state.responses = [];
+  state.viewingArchive = false;
   document.getElementById("intro-form").reset();
   showScreen("screen-intro");
+});
+
+/* ============================================================
+   4. GitHub 연동 (결과 저장 / 조회)
+   ============================================================ */
+const GH_CONFIG_KEY = "ppvt_github_config";
+const GH_DEFAULTS = { owner: "Heejune7", repo: "ppvt", branch: "master", token: "" };
+
+function loadGithubConfig() {
+  try {
+    const raw = localStorage.getItem(GH_CONFIG_KEY);
+    if (!raw) return { ...GH_DEFAULTS };
+    return { ...GH_DEFAULTS, ...JSON.parse(raw) };
+  } catch {
+    return { ...GH_DEFAULTS };
+  }
+}
+
+function saveGithubConfig(cfg) {
+  localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(cfg));
+}
+
+function utf8ToBase64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  bytes.forEach((b) => { binary += String.fromCharCode(b); });
+  return btoa(binary);
+}
+
+function setStatus(elId, type, message) {
+  const el2 = document.getElementById(elId);
+  el2.className = "status-msg" + (type ? ` status-${type}` : "");
+  el2.textContent = message || "";
+}
+
+/* ---------- 설정 모달 ---------- */
+const settingsModal = document.getElementById("settings-modal");
+
+function openSettingsModal() {
+  const cfg = loadGithubConfig();
+  document.getElementById("gh-owner").value = cfg.owner;
+  document.getElementById("gh-repo").value = cfg.repo;
+  document.getElementById("gh-branch").value = cfg.branch;
+  document.getElementById("gh-token").value = cfg.token;
+  setStatus("settings-status", "", "");
+  settingsModal.classList.add("active");
+}
+function closeSettingsModal() { settingsModal.classList.remove("active"); }
+
+document.getElementById("btn-open-settings").addEventListener("click", openSettingsModal);
+document.getElementById("btn-settings-close").addEventListener("click", closeSettingsModal);
+settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) closeSettingsModal(); });
+
+document.getElementById("btn-settings-save").addEventListener("click", () => {
+  const cfg = {
+    owner: document.getElementById("gh-owner").value.trim() || GH_DEFAULTS.owner,
+    repo: document.getElementById("gh-repo").value.trim() || GH_DEFAULTS.repo,
+    branch: document.getElementById("gh-branch").value.trim() || GH_DEFAULTS.branch,
+    token: document.getElementById("gh-token").value.trim(),
+  };
+  saveGithubConfig(cfg);
+  setStatus("settings-status", "success", "설정이 저장되었습니다.");
+  setTimeout(closeSettingsModal, 700);
+});
+
+/* ---------- 결과를 GitHub에 저장 ---------- */
+function sanitizePathSegment(s) {
+  return String(s).replace(/[^a-zA-Z0-9가-힣._-]/g, "_");
+}
+
+async function saveResultToGithub() {
+  const cfg = loadGithubConfig();
+  if (!cfg.token) {
+    setStatus("results-save-status", "error", "GitHub 토큰이 설정되어 있지 않습니다. 먼저 처음 화면의 '⚙ 설정'에서 토큰을 입력해주세요.");
+    return;
+  }
+  const subj = state.subject;
+  const filename = `${sanitizePathSegment(subj.id)}_${timestampForFilename()}.json`;
+  const path = `results/${filename}`;
+  const record = {
+    subject: subj,
+    responses: state.responses,
+    savedAt: new Date().toISOString(),
+  };
+  const content = utf8ToBase64(JSON.stringify(record, null, 2));
+
+  setStatus("results-save-status", "info", "GitHub에 저장 중...");
+  try {
+    const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${cfg.token}`,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: `결과 저장: ${subj.id} (${filename})`,
+        content,
+        branch: cfg.branch,
+      }),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(`HTTP ${res.status} ${errBody.message || ""}`);
+    }
+    const json = await res.json();
+    setStatus("results-save-status", "success",
+      `저장되었습니다: ${filename} (${new Date().toLocaleString("ko-KR")})`);
+    const link = document.createElement("a");
+    link.href = json.content.html_url;
+    link.target = "_blank";
+    link.textContent = " GitHub에서 보기 ↗";
+    link.style.marginLeft = "6px";
+    document.getElementById("results-save-status").appendChild(link);
+  } catch (err) {
+    setStatus("results-save-status", "error", "저장 실패: " + err.message);
+  }
+}
+
+document.getElementById("btn-save-github").addEventListener("click", saveResultToGithub);
+
+/* ---------- 저장된 결과 목록 ---------- */
+function parseArchiveFilename(name) {
+  const m = name.match(/^(.+)_(\d{8})_(\d{6})\.json$/);
+  if (!m) return null;
+  const [, subjectId, dateStr, timeStr] = m;
+  const y = dateStr.slice(0, 4), mo = dateStr.slice(4, 6), d = dateStr.slice(6, 8);
+  const h = timeStr.slice(0, 2), mi = timeStr.slice(2, 4), s = timeStr.slice(4, 6);
+  return {
+    subjectId,
+    sortKey: `${dateStr}${timeStr}`,
+    displayDate: `${y}-${mo}-${d} ${h}:${mi}:${s}`,
+  };
+}
+
+async function loadArchiveList() {
+  const cfg = loadGithubConfig();
+  document.getElementById("archive-repo-line").textContent = `${cfg.owner}/${cfg.repo} (${cfg.branch})`;
+  const tbody = document.getElementById("archive-table-body");
+  tbody.innerHTML = "";
+  setStatus("archive-status", "info", "불러오는 중...");
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/results?ref=${encodeURIComponent(cfg.branch)}`,
+      { headers: { "Accept": "application/vnd.github+json" } }
+    );
+    if (res.status === 404) {
+      setStatus("archive-status", "info", "아직 저장된 결과가 없습니다.");
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const files = await res.json();
+
+    const items = files
+      .filter((f) => f.type === "file" && f.name.endsWith(".json"))
+      .map((f) => ({ ...f, parsed: parseArchiveFilename(f.name) }))
+      .filter((f) => f.parsed)
+      .sort((a, b) => b.parsed.sortKey.localeCompare(a.parsed.sortKey));
+
+    if (items.length === 0) {
+      setStatus("archive-status", "info", "아직 저장된 결과가 없습니다.");
+      return;
+    }
+    setStatus("archive-status", "", "");
+
+    for (const item of items) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${item.parsed.subjectId}</td>
+        <td>${item.parsed.displayDate}</td>
+        <td class="archive-score-cell">불러오는 중…</td>
+        <td><button class="btn btn-secondary btn-sm">보기</button></td>
+      `;
+      tr.querySelector("button").addEventListener("click", () => viewArchivedRecord(item.download_url));
+      tbody.appendChild(tr);
+
+      fetch(item.download_url)
+        .then((r) => r.json())
+        .then((record) => {
+          const correct = (record.responses || []).filter((r) => r.correct).length;
+          const total = (record.responses || []).length;
+          tr.querySelector(".archive-score-cell").textContent = `${correct} / ${total}`;
+        })
+        .catch(() => {
+          tr.querySelector(".archive-score-cell").textContent = "-";
+        });
+    }
+  } catch (err) {
+    setStatus("archive-status", "error", "목록을 불러오지 못했습니다: " + err.message);
+  }
+}
+
+async function viewArchivedRecord(downloadUrl) {
+  setStatus("archive-status", "info", "불러오는 중...");
+  try {
+    const res = await fetch(downloadUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const record = await res.json();
+    state.subject = record.subject;
+    state.responses = record.responses;
+    state.viewingArchive = true;
+    const results = computeResults();
+    renderResults(results);
+    showScreen("screen-results");
+  } catch (err) {
+    setStatus("archive-status", "error", "결과를 불러오지 못했습니다: " + err.message);
+  }
+}
+
+document.getElementById("btn-open-archive").addEventListener("click", () => {
+  showScreen("screen-archive");
+  loadArchiveList();
+});
+document.getElementById("btn-archive-back").addEventListener("click", () => showScreen("screen-intro"));
+document.getElementById("btn-archive-refresh").addEventListener("click", loadArchiveList);
+document.getElementById("btn-back-to-archive").addEventListener("click", () => {
+  showScreen("screen-archive");
+  loadArchiveList();
 });

@@ -11,6 +11,10 @@
 <!-- ===================== 0. 시작 화면 ===================== -->
 <section id="screen-intro" class="screen active">
   <div class="card">
+    <div class="card-toolbar">
+      <button id="btn-open-archive" class="btn btn-ghost btn-sm" type="button">저장된 결과 보기</button>
+      <button id="btn-open-settings" class="btn btn-ghost btn-sm btn-icon" type="button" title="GitHub 저장 설정">⚙ 설정</button>
+    </div>
     <h1>명사·동사 그림어휘력 검사</h1>
     <p class="subtitle">Picture Vocabulary Test for Nouns and Verbs — 20문항 프로토타입</p>
 
@@ -43,6 +47,66 @@
 
       <button type="submit" class="btn btn-primary btn-lg">검사 시작</button>
     </form>
+  </div>
+</section>
+
+<!-- ===================== 설정 모달 (GitHub 저장 연동) ===================== -->
+<div id="settings-modal" class="modal-overlay">
+  <div class="modal-card">
+    <h2>GitHub 저장 설정</h2>
+    <p class="modal-desc">
+      검사 결과를 GitHub 저장소에 저장하고 언제든 다시 불러오려면 아래 정보를 입력하세요.
+      조회(읽기)는 토큰 없이도 가능하지만, 저장(쓰기)에는 토큰이 필요합니다.
+    </p>
+    <div class="field">
+      <label for="gh-owner">GitHub 사용자명/조직</label>
+      <input type="text" id="gh-owner" placeholder="예: Heejune7">
+    </div>
+    <div class="field">
+      <label for="gh-repo">저장소 이름</label>
+      <input type="text" id="gh-repo" placeholder="예: ppvt">
+    </div>
+    <div class="field">
+      <label for="gh-branch">브랜치</label>
+      <input type="text" id="gh-branch" placeholder="master">
+    </div>
+    <div class="field">
+      <label for="gh-token">Personal Access Token (저장 시에만 필요)</label>
+      <input type="password" id="gh-token" placeholder="github_pat_... 또는 ghp_..." autocomplete="off">
+    </div>
+    <div class="notice notice-warn">
+      이 저장소는 <strong>public</strong>입니다. 저장되는 검사 결과(피검자ID, 생년월, 성별, 점수 등)는
+      인터넷에서 누구나 열람할 수 있습니다. 토큰은 이 브라우저의 localStorage에만 저장되며 외부로 전송되지 않습니다.
+      가능하면 이 저장소 하나에만 쓰기 권한이 있는 <strong>fine-grained token</strong>을 사용하세요.
+    </div>
+    <div id="settings-status" class="status-msg"></div>
+    <div class="modal-actions">
+      <button id="btn-settings-save" class="btn btn-primary">저장</button>
+      <button id="btn-settings-close" class="btn btn-ghost">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 저장된 결과 목록 화면 ===================== -->
+<section id="screen-archive" class="screen">
+  <div class="results-wrap">
+    <div class="card-toolbar">
+      <button id="btn-archive-back" class="btn btn-ghost btn-sm" type="button">&larr; 처음으로</button>
+      <button id="btn-archive-refresh" class="btn btn-ghost btn-sm" type="button">새로고침</button>
+    </div>
+    <h1>저장된 결과</h1>
+    <p class="subtitle" id="archive-repo-line"></p>
+    <div id="archive-status" class="status-msg"></div>
+    <div class="table-card">
+      <div class="table-scroll">
+        <table id="archive-table">
+          <thead>
+            <tr><th>피검자ID</th><th>검사일시</th><th>총점</th><th></th></tr>
+          </thead>
+          <tbody id="archive-table-body"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -126,9 +190,12 @@
       </div>
     </div>
 
+    <div id="results-save-status" class="status-msg"></div>
     <div class="export-bar">
       <button id="btn-export-excel" class="btn btn-primary">엑셀로 내보내기 (.xlsx)</button>
       <button id="btn-export-csv" class="btn btn-secondary">CSV로 내보내기</button>
+      <button id="btn-save-github" class="btn btn-secondary">GitHub에 저장</button>
+      <button id="btn-back-to-archive" class="btn btn-ghost" style="display:none;">저장된 목록으로</button>
       <button id="btn-restart" class="btn btn-ghost">새 검사 시작</button>
     </div>
   </div>
