@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>명사·동사 그림어휘력 검사</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== 0. 시작 화면 ===================== -->
+<section id="screen-intro" class="screen active">
+  <div class="card">
+    <h1>명사·동사 그림어휘력 검사</h1>
+    <p class="subtitle">Picture Vocabulary Test for Nouns and Verbs — 20문항 프로토타입</p>
+
+    <form id="intro-form">
+      <div class="field">
+        <label for="subject-id">피검자 ID <span class="req">*</span></label>
+        <input type="text" id="subject-id" name="subjectId" required autocomplete="off" placeholder="예: P001">
+      </div>
+      <div class="field">
+        <label for="birth-yearmonth">생년월 (연-월)</label>
+        <input type="month" id="birth-yearmonth" name="birthYearMonth">
+      </div>
+      <div class="field">
+        <label for="gender">성별</label>
+        <select id="gender" name="gender">
+          <option value="">선택 안함</option>
+          <option value="male">남</option>
+          <option value="female">여</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="examiner">검사자명</label>
+        <input type="text" id="examiner" name="examiner" autocomplete="off" placeholder="선택 입력">
+      </div>
+
+      <div class="notice">
+        검사자가 목표어휘를 구어로 들려주고, 피검자가 화면의 그림 4개 중 해당하는 그림을 선택합니다.
+        피검자가 반응하지 않으면 검사자는 <strong>무반응</strong> 버튼을 눌러 다음 문항으로 진행합니다.
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-lg">검사 시작</button>
+    </form>
+  </div>
+</section>
+
+<!-- ===================== 1. 검사 진행 화면 ===================== -->
+<section id="screen-test" class="screen">
+  <div class="test-header">
+    <div class="progress-info">
+      <span id="item-counter">문항 1 / 20</span>
+      <div class="progress-bar-track"><div id="progress-bar-fill" class="progress-bar-fill"></div></div>
+    </div>
+    <div class="item-meta">
+      <span id="item-wordclass-badge" class="badge"></span>
+      <span id="item-category-badge" class="badge badge-muted"></span>
+    </div>
+  </div>
+
+  <div class="prompt-area">
+    <p class="prompt-instruction">검사자가 아래 목표 어휘를 구어로 들려주세요</p>
+    <p id="target-word-display" class="target-word"></p>
+  </div>
+
+  <div id="options-grid" class="options-grid"></div>
+
+  <div class="test-footer">
+    <button id="btn-no-response" class="btn btn-secondary">무반응 (No Response)</button>
+  </div>
+</section>
+
+<!-- ===================== 2. 결과 화면 ===================== -->
+<section id="screen-results" class="screen">
+  <div class="results-wrap">
+    <h1>검사 결과</h1>
+    <p id="results-subject-line" class="subtitle"></p>
+
+    <div class="summary-grid">
+      <div class="stat-card stat-primary">
+        <span class="stat-label">총점</span>
+        <span id="stat-total" class="stat-value">0 / 20</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">명사 하위점수</span>
+        <span id="stat-noun" class="stat-value">0 / 15</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">동사 하위점수</span>
+        <span id="stat-verb" class="stat-value">0 / 5</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">평균 반응시간</span>
+        <span id="stat-rt" class="stat-value">0.0초</span>
+      </div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h2>범주별 정확도</h2>
+        <canvas id="chart-category"></canvas>
+      </div>
+      <div class="chart-card">
+        <h2>오답 유형별 분포 (의미 / 시각 / 무관)</h2>
+        <canvas id="chart-errortype"></canvas>
+      </div>
+      <div class="chart-card chart-wide">
+        <h2>문항별 반응시간</h2>
+        <canvas id="chart-rt"></canvas>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <h2>문항별 상세 기록</h2>
+      <div class="table-scroll">
+        <table id="detail-table">
+          <thead>
+            <tr>
+              <th>번호</th><th>어종</th><th>범주</th><th>목표어휘</th>
+              <th>선택 위치</th><th>선택 어휘</th><th>오답유형</th><th>정오</th><th>반응시간(ms)</th>
+            </tr>
+          </thead>
+          <tbody id="detail-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="export-bar">
+      <button id="btn-export-excel" class="btn btn-primary">엑셀로 내보내기 (.xlsx)</button>
+      <button id="btn-export-csv" class="btn btn-secondary">CSV로 내보내기</button>
+      <button id="btn-restart" class="btn btn-ghost">새 검사 시작</button>
+    </div>
+  </div>
+</section>
+
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

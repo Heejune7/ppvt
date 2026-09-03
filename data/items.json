@@ -1,0 +1,206 @@
+{
+  "test_name": "명사·동사 그림어휘력 검사",
+  "version": "0.1-prototype",
+  "items": [
+    {
+      "id": 1, "word_class": "noun", "category": "과일", "target": "사과",
+      "answer_position": 3,
+      "options": [
+        { "position": 1, "word": "딸기",   "role": "sem", "image": "딸기.png" },
+        { "position": 2, "word": "토마토", "role": "vis", "image": "토마토.png" },
+        { "position": 3, "word": "사과",   "role": "tgt", "image": "사과.png" },
+        { "position": 4, "word": "모자",   "role": "unr", "image": "모자.png" }
+      ]
+    },
+    {
+      "id": 2, "word_class": "noun", "category": "과일", "target": "포도",
+      "answer_position": 1,
+      "options": [
+        { "position": 1, "word": "포도", "role": "tgt", "image": "포도.png" },
+        { "position": 2, "word": "수박", "role": "sem", "image": "수박.png" },
+        { "position": 3, "word": "앵두", "role": "vis", "image": "체리.png" },
+        { "position": 4, "word": "우산", "role": "unr", "image": "우산.png" }
+      ]
+    },
+    {
+      "id": 3, "word_class": "noun", "category": "과일", "target": "파인애플",
+      "answer_position": 4,
+      "options": [
+        { "position": 1, "word": "멜론",   "role": "sem", "image": "멜론.png" },
+        { "position": 2, "word": "솔방울", "role": "vis", "image": "솔방울.png" },
+        { "position": 3, "word": "신발",   "role": "unr", "image": "신발.png" },
+        { "position": 4, "word": "파인애플", "role": "tgt", "image": "파인애플.png" }
+      ]
+    },
+    {
+      "id": 4, "word_class": "noun", "category": "채소", "target": "옥수수",
+      "answer_position": 2,
+      "options": [
+        { "position": 1, "word": "당근",   "role": "sem", "image": "당근.png" },
+        { "position": 2, "word": "옥수수", "role": "tgt", "image": "옥수수.png" },
+        { "position": 3, "word": "바나나", "role": "vis", "image": "바나나.png" },
+        { "position": 4, "word": "연필",   "role": "unr", "image": "연필.png" }
+      ]
+    },
+    {
+      "id": 5, "word_class": "noun", "category": "교통기관", "target": "버스",
+      "answer_position": 1,
+      "options": [
+        { "position": 1, "word": "버스",   "role": "tgt", "image": "버스.png" },
+        { "position": 2, "word": "트럭",   "role": "sem", "image": "트럭.png" },
+        { "position": 3, "word": "기차",   "role": "vis", "image": "기차.png" },
+        { "position": 4, "word": "냉장고", "role": "unr", "image": "냉장고.png" }
+      ]
+    },
+    {
+      "id": 6, "word_class": "noun", "category": "교통기관", "target": "헬리콥터",
+      "answer_position": 4,
+      "options": [
+        { "position": 1, "word": "비행기", "role": "sem", "image": "비행기.png" },
+        { "position": 2, "word": "선풍기", "role": "vis", "image": "선풍기.png" },
+        { "position": 3, "word": "의자",   "role": "unr", "image": "의자.png" },
+        { "position": 4, "word": "헬리콥터", "role": "tgt", "image": "헬리콥터.png" }
+      ]
+    },
+    {
+      "id": 7, "word_class": "noun", "category": "교통기관", "target": "잠수함",
+      "answer_position": 2,
+      "options": [
+        { "position": 1, "word": "여객선", "role": "sem", "image": "여객선.png" },
+        { "position": 2, "word": "잠수함", "role": "tgt", "image": "잠수함.png" },
+        { "position": 3, "word": "고래",   "role": "vis", "image": "고래.png" },
+        { "position": 4, "word": "가방",   "role": "unr", "image": "가방.png" }
+      ]
+    },
+    {
+      "id": 8, "word_class": "noun", "category": "동물", "target": "기린",
+      "answer_position": 3,
+      "options": [
+        { "position": 1, "word": "얼룩말", "role": "sem", "image": "얼룩말.png" },
+        { "position": 2, "word": "사슴",   "role": "vis", "image": "사슴.png" },
+        { "position": 3, "word": "기린",   "role": "tgt", "image": "기린.png" },
+        { "position": 4, "word": "사다리", "role": "unr", "image": "사다리.png" }
+      ]
+    },
+    {
+      "id": 9, "word_class": "noun", "category": "동물", "target": "하마",
+      "answer_position": 1,
+      "options": [
+        { "position": 1, "word": "하마",   "role": "tgt", "image": "하마.png" },
+        { "position": 2, "word": "코뿔소", "role": "sem", "image": "코뿔소.png" },
+        { "position": 3, "word": "돼지",   "role": "vis", "image": "돼지.png" },
+        { "position": 4, "word": "소파",   "role": "unr", "image": "소파.png" }
+      ]
+    },
+    {
+      "id": 10, "word_class": "noun", "category": "동물", "target": "다람쥐",
+      "answer_position": 4,
+      "options": [
+        { "position": 1, "word": "토끼", "role": "sem", "image": "토끼.png" },
+        { "position": 2, "word": "쥐",   "role": "vis", "image": "쥐.png" },
+        { "position": 3, "word": "장갑", "role": "unr", "image": "장갑.png" },
+        { "position": 4, "word": "다람쥐", "role": "tgt", "image": "다람쥐.png" }
+      ]
+    },
+    {
+      "id": 11, "word_class": "noun", "category": "신체부위", "target": "팔꿈치",
+      "answer_position": 2,
+      "options": [
+        { "position": 1, "word": "발목",   "role": "sem1", "image": "발목.png" },
+        { "position": 2, "word": "팔꿈치", "role": "tgt",  "image": "팔꿈치.png" },
+        { "position": 3, "word": "무릎",   "role": "sem2", "image": "무릎.png" },
+        { "position": 4, "word": "어깨",   "role": "sem3", "image": "어깨.png" }
+      ]
+    },
+    {
+      "id": 12, "word_class": "noun", "category": "의복", "target": "목도리",
+      "answer_position": 3,
+      "options": [
+        { "position": 1, "word": "장갑",   "role": "sem", "image": "장갑.png" },
+        { "position": 2, "word": "넥타이", "role": "vis", "image": "넥타이.png" },
+        { "position": 3, "word": "목도리", "role": "tgt", "image": "목도리.png" },
+        { "position": 4, "word": "담요",   "role": "unr", "image": "담요.png" }
+      ]
+    },
+    {
+      "id": 13, "word_class": "noun", "category": "도구", "target": "저울",
+      "answer_position": 1,
+      "options": [
+        { "position": 1, "word": "저울",   "role": "tgt", "image": "저울.png" },
+        { "position": 2, "word": "계산기", "role": "sem", "image": "계산기.png" },
+        { "position": 3, "word": "시계",   "role": "vis", "image": "시계.png" },
+        { "position": 4, "word": "선풍기", "role": "unr", "image": "선풍기.png" }
+      ]
+    },
+    {
+      "id": 14, "word_class": "noun", "category": "도구", "target": "망원경",
+      "answer_position": 2,
+      "options": [
+        { "position": 1, "word": "현미경", "role": "sem", "image": "현미경.png" },
+        { "position": 2, "word": "망원경", "role": "tgt", "image": "망원경.png" },
+        { "position": 3, "word": "손전등", "role": "vis", "image": "손전등.png" },
+        { "position": 4, "word": "우산",   "role": "unr", "image": "우산.png" }
+      ]
+    },
+    {
+      "id": 15, "word_class": "noun", "category": "도구", "target": "나침반",
+      "answer_position": 3,
+      "options": [
+        { "position": 1, "word": "지도",   "role": "sem", "image": "지도.png" },
+        { "position": 2, "word": "시계",   "role": "vis", "image": "시계.png" },
+        { "position": 3, "word": "나침반", "role": "tgt", "image": "나침반.png" },
+        { "position": 4, "word": "컵",     "role": "unr", "image": "컵.png" }
+      ]
+    },
+    {
+      "id": 16, "word_class": "verb", "verb_type": "action", "target": "던지다",
+      "answer_position": 4,
+      "options": [
+        { "position": 1, "word": "잡다", "role": "sem", "image": "잡다.png" },
+        { "position": 2, "word": "차다", "role": "vis", "image": "차다.png" },
+        { "position": 3, "word": "줍다", "role": "unr", "image": "줍다.png" },
+        { "position": 4, "word": "던지다", "role": "tgt", "image": "던지다.png" }
+      ]
+    },
+    {
+      "id": 17, "word_class": "verb", "verb_type": "action", "target": "자르다",
+      "answer_position": 1,
+      "options": [
+        { "position": 1, "word": "자르다", "role": "tgt", "image": "자르다.png" },
+        { "position": 2, "word": "붙이다", "role": "sem", "image": "붙이다.png" },
+        { "position": 3, "word": "찢다",   "role": "vis", "image": "찢다.png" },
+        { "position": 4, "word": "접다",   "role": "unr", "image": "접다.png" }
+      ]
+    },
+    {
+      "id": 18, "word_class": "verb", "verb_type": "action", "target": "뛰다",
+      "answer_position": 2,
+      "options": [
+        { "position": 1, "word": "오르다", "role": "sem", "image": "오르다.png" },
+        { "position": 2, "word": "뛰다",   "role": "tgt", "image": "뛰다.png" },
+        { "position": 3, "word": "내리다", "role": "vis", "image": "내리다.png" },
+        { "position": 4, "word": "앉다",   "role": "unr", "image": "앉다.png" }
+      ]
+    },
+    {
+      "id": 19, "word_class": "verb", "verb_type": "state_change", "target": "젖다",
+      "answer_position": 4,
+      "options": [
+        { "position": 1, "word": "마르다",     "role": "sem", "image": "마르다.png" },
+        { "position": 2, "word": "더러워지다", "role": "vis", "image": "더러워지다.png" },
+        { "position": 3, "word": "깨지다",     "role": "unr", "image": "깨지다.png" },
+        { "position": 4, "word": "젖다",       "role": "tgt", "image": "젖다.png" }
+      ]
+    },
+    {
+      "id": 20, "word_class": "verb", "verb_type": "psych", "target": "놀라다",
+      "answer_position": 3,
+      "options": [
+        { "position": 1, "word": "무섭다", "role": "sem", "image": "무섭다.png" },
+        { "position": 2, "word": "화나다", "role": "vis", "image": "화나다.png" },
+        { "position": 3, "word": "놀라다", "role": "tgt", "image": "놀라다.png" },
+        { "position": 4, "word": "행복하다", "role": "unr", "image": "행복하다.png" }
+      ]
+    }
+  ]
+}
