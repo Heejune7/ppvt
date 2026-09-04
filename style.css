@@ -103,9 +103,14 @@ html, body {
 .card-toolbar {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
+.toolbar-right { display: flex; align-items: center; gap: 10px; }
+.auth-status-line { font-size: 0.78rem; color: var(--color-text-muted); }
+.auth-status-line.logged-in { color: var(--color-correct); font-weight: 600; }
 
 /* ---------- Settings modal ---------- */
 .modal-overlay {

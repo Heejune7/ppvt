@@ -9,7 +9,7 @@ const state = {
   currentIndex: 0,
   responses: [],       // 문항별 반응 기록
   itemStartTime: 0,
-  viewingArchive: false, // true면 GitHub에서 불러온 과거 결과를 보는 중
+  viewingArchive: false, // true면 Supabase에서 불러온 과거 결과를 보는 중
 };
 
 const VERB_TYPE_LABEL = {
@@ -557,30 +557,22 @@ document.getElementById("btn-restart").addEventListener("click", () => {
 });
 
 /* ============================================================
-   4. GitHub 연동 (결과 저장 / 조회)
+   4. Supabase 연동 (로그인 + 결과 저장 / 조회)
    ============================================================ */
-const GH_CONFIG_KEY = "ppvt_github_config";
-const GH_DEFAULTS = { owner: "Heejune7", repo: "ppvt", branch: "master", token: "" };
+const SB_CONFIG_KEY = "ppvt_supabase_config";
 
-function loadGithubConfig() {
+function loadSupabaseConfig() {
   try {
-    const raw = localStorage.getItem(GH_CONFIG_KEY);
-    if (!raw) return { ...GH_DEFAULTS };
-    return { ...GH_DEFAULTS, ...JSON.parse(raw) };
+    const raw = localStorage.getItem(SB_CONFIG_KEY);
+    if (!raw) return { url: "", anonKey: "" };
+    return { url: "", anonKey: "", ...JSON.parse(raw) };
   } catch {
-    return { ...GH_DEFAULTS };
+    return { url: "", anonKey: "" };
   }
 }
 
-function saveGithubConfig(cfg) {
-  localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(cfg));
-}
-
-function utf8ToBase64(str) {
-  const bytes = new TextEncoder().encode(str);
-  let binary = "";
-  bytes.forEach((b) => { binary += String.fromCharCode(b); });
-  return btoa(binary);
+function saveSupabaseConfig(cfg) {
+  localStorage.setItem(SB_CONFIG_KEY, JSON.stringify(cfg));
 }
 
 function setStatus(elId, type, message) {
@@ -589,15 +581,59 @@ function setStatus(elId, type, message) {
   el2.textContent = message || "";
 }
 
-/* ---------- 설정 모달 ---------- */
+let sbClient = null;
+let currentUser = null;
+
+function getSupabaseClient() {
+  const cfg = loadSupabaseConfig();
+  if (!cfg.url || !cfg.anonKey) return null;
+  if (!sbClient || sbClient.__cfgUrl !== cfg.url || sbClient.__cfgKey !== cfg.anonKey) {
+    sbClient = supabase.createClient(cfg.url, cfg.anonKey);
+    sbClient.__cfgUrl = cfg.url;
+    sbClient.__cfgKey = cfg.anonKey;
+  }
+  return sbClient;
+}
+
+function updateAuthStatusLine() {
+  const line = document.getElementById("auth-status-line");
+  if (currentUser) {
+    line.textContent = `${currentUser.email} (로그아웃)`;
+    line.classList.add("logged-in");
+    line.onclick = handleLogout;
+  } else {
+    line.textContent = "로그인 필요";
+    line.classList.remove("logged-in");
+    line.onclick = openLoginModal;
+  }
+}
+
+async function handleLogout() {
+  const client = getSupabaseClient();
+  if (client) await client.auth.signOut();
+  currentUser = null;
+  updateAuthStatusLine();
+}
+
+async function initSupabaseAuth() {
+  const client = getSupabaseClient();
+  if (!client) { updateAuthStatusLine(); return; }
+  const { data } = await client.auth.getSession();
+  currentUser = data.session ? data.session.user : null;
+  updateAuthStatusLine();
+  client.auth.onAuthStateChange((_event, session) => {
+    currentUser = session ? session.user : null;
+    updateAuthStatusLine();
+  });
+}
+
+/* ---------- 설정 모달 (Supabase URL / anon key) ---------- */
 const settingsModal = document.getElementById("settings-modal");
 
 function openSettingsModal() {
-  const cfg = loadGithubConfig();
-  document.getElementById("gh-owner").value = cfg.owner;
-  document.getElementById("gh-repo").value = cfg.repo;
-  document.getElementById("gh-branch").value = cfg.branch;
-  document.getElementById("gh-token").value = cfg.token;
+  const cfg = loadSupabaseConfig();
+  document.getElementById("sb-url").value = cfg.url;
+  document.getElementById("sb-anon-key").value = cfg.anonKey;
   setStatus("settings-status", "", "");
   settingsModal.classList.add("active");
 }
@@ -607,161 +643,170 @@ document.getElementById("btn-open-settings").addEventListener("click", openSetti
 document.getElementById("btn-settings-close").addEventListener("click", closeSettingsModal);
 settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) closeSettingsModal(); });
 
-document.getElementById("btn-settings-save").addEventListener("click", () => {
+document.getElementById("btn-settings-save").addEventListener("click", async () => {
   const cfg = {
-    owner: document.getElementById("gh-owner").value.trim() || GH_DEFAULTS.owner,
-    repo: document.getElementById("gh-repo").value.trim() || GH_DEFAULTS.repo,
-    branch: document.getElementById("gh-branch").value.trim() || GH_DEFAULTS.branch,
-    token: document.getElementById("gh-token").value.trim(),
+    url: document.getElementById("sb-url").value.trim().replace(/\/+$/, ""),
+    anonKey: document.getElementById("sb-anon-key").value.trim(),
   };
-  saveGithubConfig(cfg);
+  if (!cfg.url || !cfg.anonKey) {
+    setStatus("settings-status", "error", "URL과 anon key를 모두 입력해주세요.");
+    return;
+  }
+  saveSupabaseConfig(cfg);
+  sbClient = null;
   setStatus("settings-status", "success", "설정이 저장되었습니다.");
+  await initSupabaseAuth();
   setTimeout(closeSettingsModal, 700);
 });
 
-/* ---------- 결과를 GitHub에 저장 ---------- */
-function sanitizePathSegment(s) {
-  return String(s).replace(/[^a-zA-Z0-9가-힣._-]/g, "_");
-}
+/* ---------- 로그인 모달 ---------- */
+const loginModal = document.getElementById("login-modal");
 
-async function saveResultToGithub() {
-  const cfg = loadGithubConfig();
-  if (!cfg.token) {
-    setStatus("results-save-status", "error", "GitHub 토큰이 설정되어 있지 않습니다. 먼저 처음 화면의 '⚙ 설정'에서 토큰을 입력해주세요.");
+function openLoginModal() {
+  const client = getSupabaseClient();
+  if (!client) {
+    openSettingsModal();
+    setStatus("settings-status", "error", "먼저 Supabase URL과 anon key를 설정해주세요.");
+    return;
+  }
+  setStatus("login-status", "", "");
+  loginModal.classList.add("active");
+}
+function closeLoginModal() { loginModal.classList.remove("active"); }
+
+document.getElementById("btn-login-close").addEventListener("click", closeLoginModal);
+loginModal.addEventListener("click", (e) => { if (e.target === loginModal) closeLoginModal(); });
+
+document.getElementById("btn-login-submit").addEventListener("click", async () => {
+  const client = getSupabaseClient();
+  if (!client) return;
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!email || !password) {
+    setStatus("login-status", "error", "이메일과 비밀번호를 입력해주세요.");
+    return;
+  }
+  setStatus("login-status", "info", "로그인 중...");
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error) {
+    setStatus("login-status", "error", "로그인 실패: " + error.message);
+    return;
+  }
+  currentUser = data.user;
+  updateAuthStatusLine();
+  setStatus("login-status", "success", "로그인되었습니다.");
+  document.getElementById("login-password").value = "";
+  setTimeout(closeLoginModal, 500);
+});
+
+/* ---------- 결과를 Supabase에 저장 ---------- */
+async function saveResultToSupabase() {
+  const client = getSupabaseClient();
+  if (!client) {
+    setStatus("results-save-status", "error", "먼저 '⚙ 설정'에서 Supabase URL/anon key를 입력해주세요.");
+    openSettingsModal();
+    return;
+  }
+  if (!currentUser) {
+    setStatus("results-save-status", "error", "로그인이 필요합니다.");
+    openLoginModal();
     return;
   }
   const subj = state.subject;
-  const filename = `${sanitizePathSegment(subj.id)}_${timestampForFilename()}.json`;
-  const path = `results/${filename}`;
-  const record = {
-    subject: subj,
+  const results = computeResults();
+  const row = {
+    subject_id: subj.id,
+    birth_year_month: subj.birthYearMonth || null,
+    gender: subj.gender || null,
+    examiner: subj.examiner || null,
     responses: state.responses,
-    savedAt: new Date().toISOString(),
+    total_score: results.totalScore,
+    noun_score: results.nounScore,
+    verb_score: results.verbScore,
+    created_by: currentUser.id,
   };
-  const content = utf8ToBase64(JSON.stringify(record, null, 2));
 
-  setStatus("results-save-status", "info", "GitHub에 저장 중...");
-  try {
-    const res = await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${cfg.token}`,
-        "Accept": "application/vnd.github+json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        message: `결과 저장: ${subj.id} (${filename})`,
-        content,
-        branch: cfg.branch,
-      }),
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      throw new Error(`HTTP ${res.status} ${errBody.message || ""}`);
-    }
-    const json = await res.json();
-    setStatus("results-save-status", "success",
-      `저장되었습니다: ${filename} (${new Date().toLocaleString("ko-KR")})`);
-    const link = document.createElement("a");
-    link.href = json.content.html_url;
-    link.target = "_blank";
-    link.textContent = " GitHub에서 보기 ↗";
-    link.style.marginLeft = "6px";
-    document.getElementById("results-save-status").appendChild(link);
-  } catch (err) {
-    setStatus("results-save-status", "error", "저장 실패: " + err.message);
+  setStatus("results-save-status", "info", "Supabase에 저장 중...");
+  const { error } = await client.from("results").insert(row);
+  if (error) {
+    setStatus("results-save-status", "error", "저장 실패: " + error.message);
+    return;
   }
+  setStatus("results-save-status", "success", `저장되었습니다: ${subj.id} (${new Date().toLocaleString("ko-KR")})`);
 }
 
-document.getElementById("btn-save-github").addEventListener("click", saveResultToGithub);
+document.getElementById("btn-save-supabase").addEventListener("click", saveResultToSupabase);
 
 /* ---------- 저장된 결과 목록 ---------- */
-function parseArchiveFilename(name) {
-  const m = name.match(/^(.+)_(\d{8})_(\d{6})\.json$/);
-  if (!m) return null;
-  const [, subjectId, dateStr, timeStr] = m;
-  const y = dateStr.slice(0, 4), mo = dateStr.slice(4, 6), d = dateStr.slice(6, 8);
-  const h = timeStr.slice(0, 2), mi = timeStr.slice(2, 4), s = timeStr.slice(4, 6);
-  return {
-    subjectId,
-    sortKey: `${dateStr}${timeStr}`,
-    displayDate: `${y}-${mo}-${d} ${h}:${mi}:${s}`,
-  };
-}
-
 async function loadArchiveList() {
-  const cfg = loadGithubConfig();
-  document.getElementById("archive-repo-line").textContent = `${cfg.owner}/${cfg.repo} (${cfg.branch})`;
+  const client = getSupabaseClient();
   const tbody = document.getElementById("archive-table-body");
   tbody.innerHTML = "";
+
+  if (!client) {
+    setStatus("archive-status", "error", "먼저 '⚙ 설정'에서 Supabase URL/anon key를 입력해주세요.");
+    return;
+  }
+  if (!currentUser) {
+    setStatus("archive-status", "info", "저장된 결과를 보려면 로그인이 필요합니다.");
+    openLoginModal();
+    return;
+  }
+
   setStatus("archive-status", "info", "불러오는 중...");
+  const { data, error } = await client
+    .from("results")
+    .select("id, subject_id, created_at, total_score, responses")
+    .order("created_at", { ascending: false });
 
-  try {
-    const res = await fetch(
-      `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/results?ref=${encodeURIComponent(cfg.branch)}`,
-      { headers: { "Accept": "application/vnd.github+json" } }
-    );
-    if (res.status === 404) {
-      setStatus("archive-status", "info", "아직 저장된 결과가 없습니다.");
-      return;
-    }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const files = await res.json();
+  if (error) {
+    setStatus("archive-status", "error", "목록을 불러오지 못했습니다: " + error.message);
+    return;
+  }
+  if (!data || data.length === 0) {
+    setStatus("archive-status", "info", "아직 저장된 결과가 없습니다.");
+    return;
+  }
+  setStatus("archive-status", "", "");
 
-    const items = files
-      .filter((f) => f.type === "file" && f.name.endsWith(".json"))
-      .map((f) => ({ ...f, parsed: parseArchiveFilename(f.name) }))
-      .filter((f) => f.parsed)
-      .sort((a, b) => b.parsed.sortKey.localeCompare(a.parsed.sortKey));
-
-    if (items.length === 0) {
-      setStatus("archive-status", "info", "아직 저장된 결과가 없습니다.");
-      return;
-    }
-    setStatus("archive-status", "", "");
-
-    for (const item of items) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${item.parsed.subjectId}</td>
-        <td>${item.parsed.displayDate}</td>
-        <td class="archive-score-cell">불러오는 중…</td>
-        <td><button class="btn btn-secondary btn-sm">보기</button></td>
-      `;
-      tr.querySelector("button").addEventListener("click", () => viewArchivedRecord(item.download_url));
-      tbody.appendChild(tr);
-
-      fetch(item.download_url)
-        .then((r) => r.json())
-        .then((record) => {
-          const correct = (record.responses || []).filter((r) => r.correct).length;
-          const total = (record.responses || []).length;
-          tr.querySelector(".archive-score-cell").textContent = `${correct} / ${total}`;
-        })
-        .catch(() => {
-          tr.querySelector(".archive-score-cell").textContent = "-";
-        });
-    }
-  } catch (err) {
-    setStatus("archive-status", "error", "목록을 불러오지 못했습니다: " + err.message);
+  for (const row of data) {
+    const total = (row.responses || []).length;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row.subject_id}</td>
+      <td>${new Date(row.created_at).toLocaleString("ko-KR")}</td>
+      <td>${row.total_score} / ${total}</td>
+      <td><button class="btn btn-secondary btn-sm">보기</button></td>
+    `;
+    tr.querySelector("button").addEventListener("click", () => viewArchivedRecord(row.id));
+    tbody.appendChild(tr);
   }
 }
 
-async function viewArchivedRecord(downloadUrl) {
+async function viewArchivedRecord(rowId) {
+  const client = getSupabaseClient();
+  if (!client) return;
   setStatus("archive-status", "info", "불러오는 중...");
-  try {
-    const res = await fetch(downloadUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const record = await res.json();
-    state.subject = record.subject;
-    state.responses = record.responses;
-    state.viewingArchive = true;
-    const results = computeResults();
-    renderResults(results);
-    showScreen("screen-results");
-  } catch (err) {
-    setStatus("archive-status", "error", "결과를 불러오지 못했습니다: " + err.message);
+  const { data, error } = await client
+    .from("results")
+    .select("*")
+    .eq("id", rowId)
+    .single();
+  if (error) {
+    setStatus("archive-status", "error", "결과를 불러오지 못했습니다: " + error.message);
+    return;
   }
+  state.subject = {
+    id: data.subject_id,
+    birthYearMonth: data.birth_year_month || "",
+    gender: data.gender || "",
+    examiner: data.examiner || "",
+  };
+  state.responses = data.responses;
+  state.viewingArchive = true;
+  const results = computeResults();
+  renderResults(results);
+  showScreen("screen-results");
 }
 
 document.getElementById("btn-open-archive").addEventListener("click", () => {
@@ -774,3 +819,6 @@ document.getElementById("btn-back-to-archive").addEventListener("click", () => {
   showScreen("screen-archive");
   loadArchiveList();
 });
+
+/* ---------- 초기화 ---------- */
+initSupabaseAuth();
