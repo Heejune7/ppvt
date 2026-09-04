@@ -18,6 +18,7 @@ create table public.results (
   verb_total int,
   adjective_correct int,
   adjective_total int,
+  manually_stopped boolean not null default false,
   created_at timestamptz not null default now(),
   created_by uuid not null default auth.uid()
 );

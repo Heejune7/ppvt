@@ -366,6 +366,27 @@ el.btnNoResponse.addEventListener("click", () => {
   setTimeout(goToNextItemOrResults, 200);
 });
 
+document.getElementById("btn-end-test").addEventListener("click", () => {
+  if (state.responses.length === 0) {
+    if (!confirm("아직 실시한 문항이 없습니다. 그래도 검사를 종료할까요?")) return;
+  } else if (!confirm("지금까지 실시한 문항까지만 채점하고 검사를 종료할까요?")) {
+    return;
+  }
+  stopTestEarly();
+});
+
+function stopTestEarly() {
+  const a = state.admin;
+  a.manuallyStopped = true;
+  a.done = true;
+  if (a.basalFound && a.forwardWindow.length > 0) {
+    a.ceilingSeq = a.forwardWindow[a.forwardWindow.length - 1].seq;
+  } else {
+    a.ceilingSeq = null;
+  }
+  finishTest();
+}
+
 /* ============================================================
    2. 결과 계산 및 화면
    ============================================================ */
@@ -426,6 +447,8 @@ function computeResults() {
     avgRtMs, rtValues,
     basalSeq: admin ? admin.basalSeq : null,
     ceilingSeq: admin ? admin.ceilingSeq : null,
+    manuallyStopped: admin ? !!admin.manuallyStopped : false,
+    lastAdministeredSeq: responses.length ? responses[responses.length - 1].sequence : null,
   };
 }
 
@@ -440,6 +463,14 @@ function renderResults(results) {
   document.getElementById("results-save-status").className = "status-msg";
   document.getElementById("results-save-status").textContent = "";
   document.getElementById("btn-back-to-archive").style.display = state.viewingArchive ? "" : "none";
+
+  const banner = document.getElementById("manual-stop-banner");
+  if (results.manuallyStopped) {
+    document.getElementById("manual-stop-seq").textContent = results.lastAdministeredSeq ?? "-";
+    banner.style.display = "";
+  } else {
+    banner.style.display = "none";
+  }
 
   const subj = state.subject;
   document.getElementById("results-subject-line").textContent =
@@ -620,8 +651,9 @@ function buildSummaryRows(results, subj) {
     ["성별", subj.gender === "male" ? "남" : subj.gender === "female" ? "여" : ""],
     ["검사자", subj.examiner || ""],
     ["검사 실시일시", new Date().toLocaleString("ko-KR")],
+    ["검사 종료 방식", results.manuallyStopped ? `검사 임의 중지 (순번 ${results.lastAdministeredSeq ?? "-"}에서 종료)` : "정상 종료(최고한계점 도달 또는 문항 소진)"],
     [],
-    ["총점(원점수)", results.rawScore ?? ""],
+    ["총점(원점수)", results.rawScore ?? (results.manuallyStopped ? "미산출(기저점 미확보)" : "")],
     ["기저점(순번)", results.basalSeq ?? ""],
     ["최고한계점(순번)", results.ceilingSeq ?? ""],
     ["실시 문항 수", results.totalAdministered],
@@ -882,6 +914,7 @@ async function saveResultToSupabase() {
     noun_correct: results.nounSub.correct, noun_total: results.nounSub.total,
     verb_correct: results.verbSub.correct, verb_total: results.verbSub.total,
     adjective_correct: results.adjSub.correct, adjective_total: results.adjSub.total,
+    manually_stopped: results.manuallyStopped,
     created_by: currentUser.id,
   };
 
@@ -913,7 +946,7 @@ async function loadArchiveList() {
   setStatus("archive-status", "info", "불러오는 중...");
   const { data, error } = await client
     .from("results")
-    .select("id, subject_id, created_at, raw_score, responses")
+    .select("id, subject_id, created_at, raw_score, responses, manually_stopped")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -931,7 +964,7 @@ async function loadArchiveList() {
     tr.innerHTML = `
       <td>${row.subject_id}</td>
       <td>${new Date(row.created_at).toLocaleString("ko-KR")}</td>
-      <td>${row.raw_score ?? "-"}</td>
+      <td>${row.raw_score ?? "-"}${row.manually_stopped ? ' <span class="tag tag-none">임의중지</span>' : ""}</td>
       <td><button class="btn btn-secondary btn-sm">보기</button></td>
     `;
     tr.querySelector("button").addEventListener("click", () => viewArchivedRecord(row.id));
@@ -959,6 +992,7 @@ async function viewArchivedRecord(rowId) {
     basalSeq: data.basal_seq,
     ceilingSeq: data.ceiling_seq,
     totalErrors: data.ceiling_seq != null && data.raw_score != null ? (data.ceiling_seq - data.raw_score) : null,
+    manuallyStopped: !!data.manually_stopped,
   };
   state.viewingArchive = true;
   const results = computeResults();

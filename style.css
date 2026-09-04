@@ -255,7 +255,9 @@ html, body {
 .option-tile.reveal-correct { border-color: var(--color-correct); }
 .option-tile.disabled { pointer-events: none; opacity: 0.85; }
 
-.test-footer { display: flex; justify-content: center; }
+.test-footer { display: flex; justify-content: center; gap: 12px; }
+.btn-end-test { color: var(--color-incorrect); border: 1px solid #f3bcbc; }
+.btn-end-test:hover { background: #fdecec; }
 
 /* ---------- Results screen ---------- */
 #screen-results { align-items: stretch; }

@@ -151,6 +151,7 @@
 
   <div class="test-footer">
     <button id="btn-no-response" class="btn btn-secondary">무반응 (No Response)</button>
+    <button id="btn-end-test" class="btn btn-ghost btn-end-test">검사 종료</button>
   </div>
 </section>
 
@@ -159,6 +160,10 @@
   <div class="results-wrap">
     <h1>검사 결과</h1>
     <p id="results-subject-line" class="subtitle"></p>
+    <div id="manual-stop-banner" class="notice notice-warn" style="display:none;">
+      ⚠ <strong>검사 임의 중지</strong> — 검사자가 문항 순번 <span id="manual-stop-seq"></span>에서 검사를 종료했습니다.
+      최고한계점에 도달하지 않은 상태이므로 아래 원점수는 참고용입니다.
+    </div>
 
     <div class="summary-grid">
       <div class="stat-card stat-primary">
