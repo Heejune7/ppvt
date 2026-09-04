@@ -1,5 +1,6 @@
--- CUP-PPVT 결과 저장용 테이블 및 접근 정책
--- Supabase 대시보드 > SQL Editor 에서 이 파일 내용을 그대로 실행하세요.
+-- CUP-PPVT 결과 저장용 테이블 및 접근 정책 (v0.2, 150문항 기준)
+-- 신규 Supabase 프로젝트에서 처음 설정할 때 이 파일 전체를 SQL Editor에서 실행하세요.
+-- 이미 v0.1 버전 테이블을 만든 적이 있다면 이 파일 대신 supabase_migrate_v0.2.sql 을 실행하세요.
 
 create table public.results (
   id uuid primary key default gen_random_uuid(),
@@ -8,9 +9,15 @@ create table public.results (
   gender text,
   examiner text,
   responses jsonb not null,
-  total_score int not null,
-  noun_score int not null,
-  verb_score int not null,
+  raw_score int,
+  basal_seq int,
+  ceiling_seq int,
+  noun_correct int,
+  noun_total int,
+  verb_correct int,
+  verb_total int,
+  adjective_correct int,
+  adjective_total int,
   created_at timestamptz not null default now(),
   created_by uuid not null default auth.uid()
 );

@@ -4,20 +4,17 @@
    상태 (State)
    ============================================================ */
 const state = {
-  subject: null,     // { id, birthYearMonth, gender, examiner }
-  items: [],          // items.json 의 items 배열
-  currentIndex: 0,
-  responses: [],       // 문항별 반응 기록
+  subject: null,        // { id, birthYearMonth, gender, examiner }
+  itemsBySeq: new Map(), // sequence(number) -> item
+  maxSequence: 0,
+  responses: [],          // 실제 실시된 문항의 반응 기록(실시 순서대로) — 기저점 아래 가정정답 문항은 포함하지 않음
   itemStartTime: 0,
-  viewingArchive: false, // true면 Supabase에서 불러온 과거 결과를 보는 중
+  viewingArchive: false,
+  admin: null,             // 적응형(기저점/최고한계점) 실시 상태. initAdmin()으로 생성
 };
 
-const VERB_TYPE_LABEL = {
-  action: "동작동사",
-  state_change: "상태변화동사",
-  psych: "심리상태동사",
-};
-const WORD_CLASS_LABEL = { noun: "명사", verb: "동사" };
+const WORD_CLASS_LABEL = { noun: "명사", verb: "동사", adjective: "형용사" };
+const VERB_TYPE_LABEL = { action: "동작동사", state: "상태(변화/결과상태)동사", psych: "심리동사" };
 const ROLE_LABEL = { sem: "의미", vis: "시각", unr: "무관", sem1: "의미", sem2: "의미", sem3: "의미", none: "-" };
 const ROLE_TAG_CLASS = { sem: "tag-sem", vis: "tag-vis", unr: "tag-unr", sem1: "tag-sem", sem2: "tag-sem", sem3: "tag-sem", none: "tag-none" };
 
@@ -30,27 +27,190 @@ function showScreen(id) {
 }
 
 /* ============================================================
-   문항 데이터 검증 (사양서 §7)
+   문항 데이터 검증 (사양서 v0.2 §6.2)
    ============================================================ */
 function validateItems(items) {
+  const seenIds = new Set();
+  const seenSeq = new Set();
   for (const it of items) {
+    if (seenIds.has(it.item_id)) throw new Error(`item_id 중복: ${it.item_id}`);
+    seenIds.add(it.item_id);
+    if (seenSeq.has(it.sequence)) throw new Error(`sequence 중복: ${it.sequence}`);
+    seenSeq.add(it.sequence);
+
     if (!Array.isArray(it.options) || it.options.length !== 4) {
-      throw new Error(`문항 ${it.id}: 선택지 개수가 4개가 아닙니다.`);
+      throw new Error(`${it.item_id}: 선택지 개수가 4개가 아닙니다.`);
     }
     const positions = it.options.map((o) => o.position).sort();
     if (JSON.stringify(positions) !== JSON.stringify([1, 2, 3, 4])) {
-      throw new Error(`문항 ${it.id}: 선택지 position 값이 1~4가 아닙니다.`);
+      throw new Error(`${it.item_id}: 선택지 position 값이 1~4가 아닙니다.`);
     }
     const tgtOptions = it.options.filter((o) => o.role === "tgt");
     if (tgtOptions.length !== 1) {
-      throw new Error(`문항 ${it.id}: 정답(tgt) 선택지가 정확히 1개여야 합니다.`);
+      throw new Error(`${it.item_id}: 정답(tgt) 선택지가 정확히 1개여야 합니다.`);
     }
     if (tgtOptions[0].position !== it.answer_position) {
-      throw new Error(
-        `문항 ${it.id}: answer_position(${it.answer_position})과 tgt 위치(${tgtOptions[0].position})가 일치하지 않습니다.`
-      );
+      throw new Error(`${it.item_id}: answer_position과 tgt 위치가 일치하지 않습니다.`);
     }
   }
+}
+
+/* ============================================================
+   연령 → 시작 순번 (사양서 §8.2, 잠정값)
+   ============================================================ */
+const START_SEQ_TABLE = [
+  [30, 1],    // 2;6
+  [36, 8],    // 3;0
+  [48, 29],   // 4;0
+  [60, 40],   // 5;0
+  [72, 63],   // 6;0
+  [84, 72],   // 7;0
+  [96, 82],   // 8;0
+  [108, 93],  // 9;0
+  [120, 100], // 10;0
+  [132, 108], // 11;0
+  [144, 119], // 12;0
+  [156, 125], // 13;0
+  [168, 131], // 14;0
+  [180, 137], // 15;0
+];
+
+function computeAgeMonths(birthYearMonth) {
+  const [by, bm] = birthYearMonth.split("-").map(Number);
+  const now = new Date();
+  const months = (now.getFullYear() - by) * 12 + (now.getMonth() + 1 - bm);
+  return months;
+}
+
+function computeStartSequence(birthYearMonth) {
+  const months = computeAgeMonths(birthYearMonth);
+  let seq = 1;
+  for (const [minMonths, s] of START_SEQ_TABLE) {
+    if (months >= minMonths) seq = s;
+  }
+  return seq;
+}
+
+/* ============================================================
+   적응형 실시: 기저점 / 최고한계점 (사양서 §8.1, 잠정 규칙)
+   ============================================================
+   - 시작 순번에서 정방향으로 8문항 실시. 8문항 모두 정답이면 그 지점이 기저점.
+   - 8문항 모두 정답이 아니면 시작 순번 이전으로 역순 실시하며, 연속 8문항 정답
+     구간을 찾으면 그 구간의 최저 순번이 기저점. 1번 문항까지 가도 못 찾으면
+     기저점은 1번(바닥효과).
+   - 기저점 확보 후 정방향 진행. 최근 실시한 연속 8문항 중 6문항 이상 오답이면
+     최고한계점 도달, 검사 종료.
+   - 원점수 = 최고한계점 문항 순번 − 총 오류 수 (기저점 아래 미실시 문항은 정답으로 간주)
+*/
+function initAdmin(startSeq, maxSeq) {
+  return {
+    startSeq,
+    maxSeq,
+    mode: "forward",       // "forward" | "backward"
+    forwardNext: startSeq,
+    forwardWindow: [],       // [{seq, correct}] 정방향 실시, 연속
+    backwardNext: null,
+    backwardList: [],        // [{seq, correct}] 역방향 실시
+    basalFound: false,
+    basalSeq: null,
+    totalErrors: 0,
+    done: false,
+    ceilingSeq: null,
+    currentSeq: null,
+  };
+}
+
+function pickNextSeq(a) {
+  if (a.done) return null;
+  if (a.mode === "forward") {
+    return a.forwardNext <= a.maxSeq ? a.forwardNext : null;
+  }
+  return a.backwardNext >= 1 ? a.backwardNext : null;
+}
+
+function advanceAdmin(a, correct) {
+  const seq = a.currentSeq;
+  if (!correct) a.totalErrors += 1;
+
+  if (a.mode === "forward") {
+    a.forwardWindow.push({ seq, correct });
+    a.forwardNext = seq + 1;
+
+    if (!a.basalFound && a.forwardWindow.length === 8) {
+      if (a.forwardWindow.every((r) => r.correct)) {
+        a.basalFound = true;
+        a.basalSeq = a.startSeq;
+      } else if (a.startSeq === 1) {
+        a.basalFound = true;
+        a.basalSeq = 1;
+      } else {
+        a.mode = "backward";
+        a.backwardNext = a.startSeq - 1;
+      }
+    }
+
+    if (a.basalFound && a.forwardWindow.length >= 8) {
+      const last8 = a.forwardWindow.slice(-8);
+      const wrongCount = last8.filter((r) => !r.correct).length;
+      if (wrongCount >= 6) {
+        a.done = true;
+        a.ceilingSeq = seq;
+        return;
+      }
+    }
+    if (a.basalFound && a.forwardNext > a.maxSeq) {
+      a.done = true;
+      a.ceilingSeq = seq;
+    }
+  } else {
+    // backward
+    a.backwardList.push({ seq, correct });
+    a.backwardNext = seq - 1;
+
+    const last8 = a.backwardList.slice(-8);
+    if (last8.length === 8 && last8.every((r) => r.correct)) {
+      a.basalFound = true;
+      a.basalSeq = Math.min(...last8.map((r) => r.seq));
+      a.mode = "forward";
+    } else if (a.backwardNext < 1) {
+      a.basalFound = true;
+      a.basalSeq = 1;
+      a.mode = "forward";
+    }
+
+    if (a.mode === "forward" && a.basalFound && a.forwardWindow.length >= 8) {
+      const last8f = a.forwardWindow.slice(-8);
+      const wrongCount = last8f.filter((r) => !r.correct).length;
+      if (wrongCount >= 6) {
+        a.done = true;
+        a.ceilingSeq = a.forwardWindow[a.forwardWindow.length - 1].seq;
+      }
+    }
+  }
+}
+
+function adminPhaseNoteText(a) {
+  if (!a) return "";
+  if (a.mode === "backward") return "기저점 확인 중 (역순 실시)";
+  if (!a.basalFound) return "기저점 확인 중 (정순 실시)";
+  return `기저점: 순번 ${a.basalSeq} 확보됨 · 정순 실시 중`;
+}
+
+/* ============================================================
+   범주 키 (품사별로 다른 필드를 하나의 축으로 통일)
+   ============================================================ */
+function getCategoryKey(item) {
+  if (item.word_class === "noun") return item.category || "(미분류)";
+  if (item.word_class === "verb") return item.verb_type_ko || VERB_TYPE_LABEL[item.verb_type] || "(미분류)";
+  if (item.word_class === "adjective") return item.attribute_type || "(미분류)";
+  return "(미분류)";
+}
+
+function getBadgeCategoryText(item) {
+  if (item.word_class === "noun") return item.category || "";
+  if (item.word_class === "verb") return item.verb_type_ko || "";
+  if (item.word_class === "adjective") return item.attribute_type || "";
+  return "";
 }
 
 /* ============================================================
@@ -60,11 +220,12 @@ document.getElementById("intro-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.target;
   const subjectId = form.subjectId.value.trim();
-  if (!subjectId) return;
+  const birthYearMonth = form.birthYearMonth.value;
+  if (!subjectId || !birthYearMonth) return;
 
   state.subject = {
     id: subjectId,
-    birthYearMonth: form.birthYearMonth.value || "",
+    birthYearMonth,
     gender: form.gender.value || "",
     examiner: form.examiner.value.trim() || "",
   };
@@ -74,8 +235,8 @@ document.getElementById("intro-form").addEventListener("submit", async (e) => {
     if (!res.ok) throw new Error(`items.json 로드 실패 (HTTP ${res.status})`);
     const data = await res.json();
     validateItems(data.items);
-    // 사양서 8: 정답 위치는 표에 명시된 값을 그대로 사용, 프로그램이 임의로 섞지 않는다.
-    state.items = data.items;
+    state.itemsBySeq = new Map(data.items.map((it) => [it.sequence, it]));
+    state.maxSequence = Math.max(...data.items.map((it) => it.sequence));
   } catch (err) {
     alert("문항 데이터를 불러오는 중 오류가 발생했습니다.\n" + err.message +
       "\n\n로컬 파일을 직접 열었다면(file://) 브라우저가 JSON 로드를 차단할 수 있습니다. " +
@@ -83,7 +244,8 @@ document.getElementById("intro-form").addEventListener("submit", async (e) => {
     return;
   }
 
-  state.currentIndex = 0;
+  const startSeq = computeStartSequence(state.subject.birthYearMonth);
+  state.admin = initAdmin(startSeq, state.maxSequence);
   state.responses = [];
   showScreen("screen-test");
   renderItem();
@@ -95,6 +257,7 @@ document.getElementById("intro-form").addEventListener("submit", async (e) => {
 const el = {
   itemCounter: document.getElementById("item-counter"),
   progressFill: document.getElementById("progress-bar-fill"),
+  adminPhaseNote: document.getElementById("admin-phase-note"),
   wordClassBadge: document.getElementById("item-wordclass-badge"),
   categoryBadge: document.getElementById("item-category-badge"),
   targetWord: document.getElementById("target-word-display"),
@@ -102,21 +265,25 @@ const el = {
   btnNoResponse: document.getElementById("btn-no-response"),
 };
 
-function imgSrc(filename) {
-  return "img/" + encodeURIComponent(filename);
-}
-
 function renderItem() {
-  const item = state.items[state.currentIndex];
-  const total = state.items.length;
+  const seq = pickNextSeq(state.admin);
+  if (seq === null) {
+    finishTest();
+    return;
+  }
+  state.admin.currentSeq = seq;
+  const item = state.itemsBySeq.get(seq);
+  if (!item) {
+    finishTest();
+    return;
+  }
 
-  el.itemCounter.textContent = `문항 ${state.currentIndex + 1} / ${total}`;
-  el.progressFill.style.width = `${((state.currentIndex) / total) * 100}%`;
+  el.itemCounter.textContent = `문항 순번 ${seq} / ${state.maxSequence} (${item.item_id})`;
+  el.progressFill.style.width = `${(seq / state.maxSequence) * 100}%`;
+  el.adminPhaseNote.textContent = adminPhaseNoteText(state.admin);
 
   el.wordClassBadge.textContent = WORD_CLASS_LABEL[item.word_class] || item.word_class;
-  el.categoryBadge.textContent = item.word_class === "noun"
-    ? item.category
-    : VERB_TYPE_LABEL[item.verb_type] || item.verb_type;
+  el.categoryBadge.textContent = getBadgeCategoryText(item);
 
   el.targetWord.textContent = item.target;
 
@@ -127,8 +294,15 @@ function renderItem() {
     tile.className = "option-tile";
     tile.dataset.position = opt.position;
     const img = document.createElement("img");
-    img.src = imgSrc(opt.image);
+    img.src = "img/" + encodeURIComponent(opt.word) + ".png";
     img.alt = opt.word;
+    img.onerror = () => {
+      img.remove();
+      const placeholder = document.createElement("div");
+      placeholder.className = "img-placeholder";
+      placeholder.textContent = opt.word;
+      tile.appendChild(placeholder);
+    };
     tile.appendChild(img);
     tile.addEventListener("click", () => onOptionSelected(opt));
     el.optionsGrid.appendChild(tile);
@@ -139,24 +313,25 @@ function renderItem() {
 }
 
 function recordResponse({ position, word, role, correct, rtMs }) {
-  const item = state.items[state.currentIndex];
+  const item = state.itemsBySeq.get(state.admin.currentSeq);
   state.responses.push({
-    itemId: item.id,
+    itemId: item.item_id,
+    sequence: item.sequence,
+    band: item.band,
     wordClass: item.word_class,
-    category: item.word_class === "noun" ? item.category : (VERB_TYPE_LABEL[item.verb_type] || item.verb_type),
+    wordClassKo: WORD_CLASS_LABEL[item.word_class] || item.word_class,
+    categoryKey: getCategoryKey(item),
     target: item.target,
     selectedPosition: position,
     selectedWord: word,
-    role: role,        // sem / vis / unr / sem1 / sem2 / sem3 / none(무반응)
-    correct: correct,
-    rtMs: rtMs,          // null 이면 무반응
+    role,          // sem / vis / unr / sem1 / sem2 / sem3 / none(무반응)
+    correct,
+    rtMs,            // null 이면 무반응
   });
 }
 
 function goToNextItemOrResults() {
-  state.currentIndex += 1;
-  if (state.currentIndex >= state.items.length) {
-    el.progressFill.style.width = "100%";
+  if (state.admin.done) {
     finishTest();
   } else {
     renderItem();
@@ -167,7 +342,6 @@ function onOptionSelected(opt) {
   const rtMs = Math.round(performance.now() - state.itemStartTime);
   const correct = opt.role === "tgt";
 
-  // 시각 피드백
   document.querySelectorAll(".option-tile").forEach((tile) => {
     tile.classList.add("disabled");
     if (Number(tile.dataset.position) === opt.position) {
@@ -176,13 +350,8 @@ function onOptionSelected(opt) {
   });
   el.btnNoResponse.disabled = true;
 
-  recordResponse({
-    position: opt.position,
-    word: opt.word,
-    role: opt.role,
-    correct: correct,
-    rtMs: rtMs,
-  });
+  recordResponse({ position: opt.position, word: opt.word, role: opt.role, correct, rtMs });
+  advanceAdmin(state.admin, correct);
 
   setTimeout(goToNextItemOrResults, 550);
 }
@@ -191,13 +360,8 @@ el.btnNoResponse.addEventListener("click", () => {
   document.querySelectorAll(".option-tile").forEach((tile) => tile.classList.add("disabled"));
   el.btnNoResponse.disabled = true;
 
-  recordResponse({
-    position: null,
-    word: null,
-    role: "none",
-    correct: false,
-    rtMs: null,
-  });
+  recordResponse({ position: null, word: null, role: "none", correct: false, rtMs: null });
+  advanceAdmin(state.admin, false);
 
   setTimeout(goToNextItemOrResults, 200);
 });
@@ -209,34 +373,35 @@ let charts = { category: null, errortype: null, rt: null };
 
 function computeResults() {
   const responses = state.responses;
-  const totalScore = responses.filter((r) => r.correct).length;
-  const nounResponses = responses.filter((r) => r.wordClass === "noun");
-  const verbResponses = responses.filter((r) => r.wordClass === "verb");
-  const nounScore = nounResponses.filter((r) => r.correct).length;
-  const verbScore = verbResponses.filter((r) => r.correct).length;
+  const admin = state.admin;
 
-  // 범주별 정확도
-  const categoryMap = new Map(); // category -> {correct, total}
+  const rawScore = admin && admin.ceilingSeq != null ? (admin.ceilingSeq - admin.totalErrors) : null;
+
+  function subscoreFor(wc) {
+    const rs = responses.filter((r) => r.wordClass === wc);
+    return { correct: rs.filter((r) => r.correct).length, total: rs.length };
+  }
+  const nounSub = subscoreFor("noun");
+  const verbSub = subscoreFor("verb");
+  const adjSub = subscoreFor("adjective");
+
+  const categoryMap = new Map();
   for (const r of responses) {
-    if (!categoryMap.has(r.category)) categoryMap.set(r.category, { correct: 0, total: 0 });
-    const c = categoryMap.get(r.category);
+    if (!categoryMap.has(r.categoryKey)) categoryMap.set(r.categoryKey, { correct: 0, total: 0 });
+    const c = categoryMap.get(r.categoryKey);
     c.total += 1;
     if (r.correct) c.correct += 1;
   }
   const categoryAccuracy = [...categoryMap.entries()].map(([category, v]) => ({
-    category,
-    correct: v.correct,
-    total: v.total,
-    accuracy: v.total ? (v.correct / v.total) * 100 : 0,
-  }));
+    category, correct: v.correct, total: v.total, accuracy: v.total ? (v.correct / v.total) * 100 : 0,
+  })).sort((a, b) => b.total - a.total);
 
-  // 오답 유형별 분류 (무반응 제외)
   const errorCounts = { sem: 0, vis: 0, unr: 0 };
   let totalErrorsWithResponse = 0;
   for (const r of responses) {
     if (r.correct) continue;
-    if (r.role === "none") continue; // 무반응은 오답 유형 집계에서 제외
-    const bucket = r.role.startsWith("sem") ? "sem" : r.role; // sem1/sem2/sem3 -> sem
+    if (r.role === "none") continue;
+    const bucket = r.role.startsWith("sem") ? "sem" : r.role;
     if (bucket in errorCounts) {
       errorCounts[bucket] += 1;
       totalErrorsWithResponse += 1;
@@ -247,20 +412,20 @@ function computeResults() {
     vis: totalErrorsWithResponse ? (errorCounts.vis / totalErrorsWithResponse) * 100 : 0,
     unr: totalErrorsWithResponse ? (errorCounts.unr / totalErrorsWithResponse) * 100 : 0,
   };
-
   const noResponseCount = responses.filter((r) => r.role === "none").length;
 
-  // 반응시간
   const rtValues = responses.filter((r) => r.rtMs != null).map((r) => r.rtMs);
   const avgRtMs = rtValues.length ? rtValues.reduce((a, b) => a + b, 0) / rtValues.length : 0;
 
   return {
-    totalScore, totalItems: responses.length,
-    nounScore, nounTotal: nounResponses.length,
-    verbScore, verbTotal: verbResponses.length,
+    rawScore,
+    totalAdministered: responses.length,
+    nounSub, verbSub, adjSub,
     categoryAccuracy,
     errorCounts, errorRates, totalErrorsWithResponse, noResponseCount,
     avgRtMs, rtValues,
+    basalSeq: admin ? admin.basalSeq : null,
+    ceilingSeq: admin ? admin.ceilingSeq : null,
   };
 }
 
@@ -283,10 +448,13 @@ function renderResults(results) {
     (subj.gender ? ` · 성별: ${subj.gender === "male" ? "남" : "여"}` : "") +
     (subj.examiner ? ` · 검사자: ${subj.examiner}` : "");
 
-  document.getElementById("stat-total").textContent = `${results.totalScore} / ${results.totalItems}`;
-  document.getElementById("stat-noun").textContent = `${results.nounScore} / ${results.nounTotal}`;
-  document.getElementById("stat-verb").textContent = `${results.verbScore} / ${results.verbTotal}`;
+  document.getElementById("stat-total").textContent = results.rawScore != null ? `${results.rawScore}` : "-";
+  document.getElementById("stat-noun").textContent = `${results.nounSub.correct} / ${results.nounSub.total}`;
+  document.getElementById("stat-verb").textContent = `${results.verbSub.correct} / ${results.verbSub.total}`;
+  document.getElementById("stat-adj").textContent = `${results.adjSub.correct} / ${results.adjSub.total}`;
   document.getElementById("stat-rt").textContent = `${(results.avgRtMs / 1000).toFixed(2)}초`;
+  document.getElementById("stat-basal-ceiling").textContent =
+    `${results.basalSeq ?? "-"} / ${results.ceilingSeq ?? "-"}`;
 
   renderDetailTable();
   renderCategoryChart(results);
@@ -297,7 +465,7 @@ function renderResults(results) {
 function renderDetailTable() {
   const tbody = document.getElementById("detail-table-body");
   tbody.innerHTML = "";
-  state.responses.forEach((r, idx) => {
+  state.responses.forEach((r) => {
     const tr = document.createElement("tr");
     const roleTag = r.role === "none"
       ? `<span class="tag tag-none">무반응</span>`
@@ -305,9 +473,10 @@ function renderDetailTable() {
         ? `<span class="tag tag-none">-</span>`
         : `<span class="tag ${ROLE_TAG_CLASS[r.role]}">${ROLE_LABEL[r.role]}</span>`;
     tr.innerHTML = `
+      <td>${r.sequence}</td>
       <td>${r.itemId}</td>
-      <td>${WORD_CLASS_LABEL[r.wordClass]}</td>
-      <td>${r.category}</td>
+      <td>${r.wordClassKo}</td>
+      <td>${r.categoryKey}</td>
       <td>${r.target}</td>
       <td>${r.selectedPosition ?? "-"}</td>
       <td>${r.selectedWord ?? "무반응"}</td>
@@ -319,13 +488,7 @@ function renderDetailTable() {
   });
 }
 
-const CHART_COLORS = {
-  primary: "#2f6fed",
-  correct: "#1f9d55",
-  sem: "#f0a53d",
-  vis: "#7b61ff",
-  unr: "#9aa5b1",
-};
+const CHART_COLORS = { primary: "#2f6fed", correct: "#1f9d55", sem: "#f0a53d", vis: "#7b61ff", unr: "#9aa5b1" };
 
 function destroyChart(key) {
   if (charts[key]) { charts[key].destroy(); charts[key] = null; }
@@ -358,7 +521,10 @@ function renderCategoryChart(results) {
           },
         },
       },
-      scales: { y: { beginAtZero: true, max: 100, title: { display: true, text: "정확도 (%)" } } },
+      scales: {
+        x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 30, font: { size: 10 } } },
+        y: { beginAtZero: true, max: 100, title: { display: true, text: "정확도 (%)" } },
+      },
     },
   });
 }
@@ -384,13 +550,10 @@ function renderErrorTypeChart(results) {
     },
     options: {
       responsive: true,
-      plugins: {
-        legend: { position: "bottom", labels: { boxWidth: 14, font: { size: 11 } } },
-      },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 14, font: { size: 11 } } } },
     },
   });
   if (results.totalErrorsWithResponse === 0) {
-    // 오답이 없을 때 안내
     const wrap = ctx.canvas.parentElement;
     let note = wrap.querySelector(".no-error-note");
     if (!note) {
@@ -412,7 +575,7 @@ function renderRtChart() {
   charts.rt = new Chart(ctx, {
     type: "bar",
     data: {
-      labels: responses.map((r) => `#${r.itemId}`),
+      labels: responses.map((r) => `#${r.sequence}`),
       datasets: [{
         label: "반응시간(ms)",
         data: responses.map((r) => r.rtMs ?? 0),
@@ -450,24 +613,28 @@ function timestampForFilename() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
-document.getElementById("btn-export-excel").addEventListener("click", () => {
-  const results = computeResults();
-  const subj = state.subject;
-
-  const summaryRows = [
+function buildSummaryRows(results, subj) {
+  return [
     ["피검자 ID", subj.id],
     ["생년월", subj.birthYearMonth || ""],
     ["성별", subj.gender === "male" ? "남" : subj.gender === "female" ? "여" : ""],
     ["검사자", subj.examiner || ""],
     ["검사 실시일시", new Date().toLocaleString("ko-KR")],
     [],
-    ["총점", `${results.totalScore} / ${results.totalItems}`],
-    ["명사 하위점수", `${results.nounScore} / ${results.nounTotal}`],
-    ["동사 하위점수", `${results.verbScore} / ${results.verbTotal}`],
+    ["총점(원점수)", results.rawScore ?? ""],
+    ["기저점(순번)", results.basalSeq ?? ""],
+    ["최고한계점(순번)", results.ceilingSeq ?? ""],
+    ["실시 문항 수", results.totalAdministered],
+    ["명사 하위점수", `${results.nounSub.correct} / ${results.nounSub.total}`],
+    ["동사 하위점수", `${results.verbSub.correct} / ${results.verbSub.total}`],
+    ["형용사 하위점수", `${results.adjSub.correct} / ${results.adjSub.total}`],
     ["평균 반응시간(초)", (results.avgRtMs / 1000).toFixed(2)],
     ["무반응 문항 수", results.noResponseCount],
+    ["표준점수", "규준 미확보"],
+    ["백분위", "규준 미확보"],
+    ["어휘발달연령", "규준 미확보"],
     [],
-    ["범주별 정확도"],
+    ["범주별 정확도 (실시 문항 기준)"],
     ["범주", "정답수", "문항수", "정확도(%)"],
     ...results.categoryAccuracy.map((c) => [c.category, c.correct, c.total, Math.round(c.accuracy * 10) / 10]),
     [],
@@ -476,28 +643,31 @@ document.getElementById("btn-export-excel").addEventListener("click", () => {
     ["의미적 오류(sem)", results.errorCounts.sem, results.errorRates.sem.toFixed(1)],
     ["시각적 오류(vis)", results.errorCounts.vis, results.errorRates.vis.toFixed(1)],
     ["무관 오류(unr)", results.errorCounts.unr, results.errorRates.unr.toFixed(1)],
-    ["오답 유형 집계 대상(무반응 제외) 합계", results.totalErrorsWithResponse, ""],
   ];
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+}
+
+function buildDetailRows() {
+  const header = ["순번", "문항ID", "어종", "범주", "목표어휘", "선택위치", "선택어휘", "오답유형코드", "오답유형", "정오", "반응시간(ms)"];
+  const rows = state.responses.map((r) => [
+    r.sequence, r.itemId, r.wordClassKo, r.categoryKey, r.target,
+    r.selectedPosition ?? "", r.selectedWord ?? "무반응", r.role,
+    r.role === "none" ? "무반응" : (r.correct ? "-" : ROLE_LABEL[r.role]),
+    r.correct ? "정답" : "오답", r.rtMs ?? "",
+  ]);
+  return [header, ...rows];
+}
+
+document.getElementById("btn-export-excel").addEventListener("click", () => {
+  const results = computeResults();
+  const subj = state.subject;
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(buildSummaryRows(results, subj));
   wsSummary["!cols"] = [{ wch: 26 }, { wch: 16 }, { wch: 12 }, { wch: 12 }];
 
-  const detailHeader = ["문항번호", "어종", "범주", "목표어휘", "선택위치", "선택어휘", "오답유형코드", "오답유형", "정오", "반응시간(ms)"];
-  const detailRows = state.responses.map((r) => [
-    r.itemId,
-    WORD_CLASS_LABEL[r.wordClass],
-    r.category,
-    r.target,
-    r.selectedPosition ?? "",
-    r.selectedWord ?? "무반응",
-    r.role,
-    r.role === "none" ? "무반응" : (r.correct ? "-" : ROLE_LABEL[r.role]),
-    r.correct ? "정답" : "오답",
-    r.rtMs ?? "",
-  ]);
-  const wsDetail = XLSX.utils.aoa_to_sheet([detailHeader, ...detailRows]);
+  const wsDetail = XLSX.utils.aoa_to_sheet(buildDetailRows());
   wsDetail["!cols"] = [
-    { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 8 },
-    { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 12 },
+    { wch: 6 }, { wch: 9 }, { wch: 8 }, { wch: 14 }, { wch: 12 },
+    { wch: 8 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 12 },
   ];
 
   const wb = XLSX.utils.book_new();
@@ -507,50 +677,40 @@ document.getElementById("btn-export-excel").addEventListener("click", () => {
   XLSX.writeFile(wb, `result_${subj.id}_${timestampForFilename()}.xlsx`);
 });
 
-document.getElementById("btn-export-csv").addEventListener("click", () => {
-  const results = computeResults();
-  const subj = state.subject;
-
-  const lines = [];
+function downloadCsv(rows, filename) {
   const csvEscape = (v) => {
     const s = String(v ?? "");
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const row = (arr) => lines.push(arr.map(csvEscape).join(","));
-
-  row(["피검자ID", subj.id]);
-  row(["생년월", subj.birthYearMonth || ""]);
-  row(["성별", subj.gender === "male" ? "남" : subj.gender === "female" ? "여" : ""]);
-  row(["검사자", subj.examiner || ""]);
-  row(["총점", `${results.totalScore}/${results.totalItems}`]);
-  row(["명사하위점수", `${results.nounScore}/${results.nounTotal}`]);
-  row(["동사하위점수", `${results.verbScore}/${results.verbTotal}`]);
-  row(["평균반응시간(초)", (results.avgRtMs / 1000).toFixed(2)]);
-  row(["의미적오류빈도", results.errorCounts.sem, "오답률(%)", results.errorRates.sem.toFixed(1)]);
-  row(["시각적오류빈도", results.errorCounts.vis, "오답률(%)", results.errorRates.vis.toFixed(1)]);
-  row(["무관오류빈도", results.errorCounts.unr, "오답률(%)", results.errorRates.unr.toFixed(1)]);
-  row([]);
-  row(["문항번호", "선택위치", "선택어휘", "오답유형코드", "정오", "반응시간(ms)"]);
-  for (const r of state.responses) {
-    row([r.itemId, r.selectedPosition ?? "", r.selectedWord ?? "무반응", r.role, r.correct ? "정답" : "오답", r.rtMs ?? ""]);
-  }
-
-  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const text = rows.map((r) => r.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["﻿" + text], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `result_${subj.id}_${timestampForFilename()}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+document.getElementById("btn-export-csv").addEventListener("click", () => {
+  const results = computeResults();
+  const subj = state.subject;
+  const ts = timestampForFilename();
+
+  downloadCsv(buildSummaryRows(results, subj), `result_${subj.id}_${ts}_요약.csv`);
+  setTimeout(() => {
+    downloadCsv(buildDetailRows(), `result_${subj.id}_${ts}_문항별기록.csv`);
+  }, 200);
 });
 
 document.getElementById("btn-restart").addEventListener("click", () => {
   state.subject = null;
-  state.items = [];
-  state.currentIndex = 0;
+  state.itemsBySeq = new Map();
+  state.maxSequence = 0;
   state.responses = [];
+  state.admin = null;
   state.viewingArchive = false;
   document.getElementById("intro-form").reset();
   showScreen("screen-intro");
@@ -560,8 +720,6 @@ document.getElementById("btn-restart").addEventListener("click", () => {
    4. Supabase 연동 (로그인 + 결과 저장 / 조회)
    ============================================================ */
 const SB_CONFIG_KEY = "ppvt_supabase_config";
-// publishable key는 클라이언트에 공개되도록 설계된 값이라 기본값으로 넣어도 안전하다.
-// 실제 데이터 비공개 여부는 Supabase Row Level Security + 로그인 여부로 결정된다.
 const SB_DEFAULTS = {
   url: "https://xchqwszsiqtsxcnnijhh.supabase.co",
   anonKey: "sb_publishable_Jckhv23SU2i0BUBIfS7k4Q_480Xtre0",
@@ -576,10 +734,7 @@ function loadSupabaseConfig() {
     return { ...SB_DEFAULTS };
   }
 }
-
-function saveSupabaseConfig(cfg) {
-  localStorage.setItem(SB_CONFIG_KEY, JSON.stringify(cfg));
-}
+function saveSupabaseConfig(cfg) { localStorage.setItem(SB_CONFIG_KEY, JSON.stringify(cfg)); }
 
 function setStatus(elId, type, message) {
   const el2 = document.getElementById(elId);
@@ -633,9 +788,7 @@ async function initSupabaseAuth() {
   });
 }
 
-/* ---------- 설정 모달 (Supabase URL / anon key) ---------- */
 const settingsModal = document.getElementById("settings-modal");
-
 function openSettingsModal() {
   const cfg = loadSupabaseConfig();
   document.getElementById("sb-url").value = cfg.url;
@@ -665,9 +818,7 @@ document.getElementById("btn-settings-save").addEventListener("click", async () 
   setTimeout(closeSettingsModal, 700);
 });
 
-/* ---------- 로그인 모달 ---------- */
 const loginModal = document.getElementById("login-modal");
-
 function openLoginModal() {
   const client = getSupabaseClient();
   if (!client) {
@@ -705,7 +856,6 @@ document.getElementById("btn-login-submit").addEventListener("click", async () =
   setTimeout(closeLoginModal, 500);
 });
 
-/* ---------- 결과를 Supabase에 저장 ---------- */
 async function saveResultToSupabase() {
   const client = getSupabaseClient();
   if (!client) {
@@ -726,9 +876,12 @@ async function saveResultToSupabase() {
     gender: subj.gender || null,
     examiner: subj.examiner || null,
     responses: state.responses,
-    total_score: results.totalScore,
-    noun_score: results.nounScore,
-    verb_score: results.verbScore,
+    raw_score: results.rawScore,
+    basal_seq: results.basalSeq,
+    ceiling_seq: results.ceilingSeq,
+    noun_correct: results.nounSub.correct, noun_total: results.nounSub.total,
+    verb_correct: results.verbSub.correct, verb_total: results.verbSub.total,
+    adjective_correct: results.adjSub.correct, adjective_total: results.adjSub.total,
     created_by: currentUser.id,
   };
 
@@ -740,10 +893,8 @@ async function saveResultToSupabase() {
   }
   setStatus("results-save-status", "success", `저장되었습니다: ${subj.id} (${new Date().toLocaleString("ko-KR")})`);
 }
-
 document.getElementById("btn-save-supabase").addEventListener("click", saveResultToSupabase);
 
-/* ---------- 저장된 결과 목록 ---------- */
 async function loadArchiveList() {
   const client = getSupabaseClient();
   const tbody = document.getElementById("archive-table-body");
@@ -762,7 +913,7 @@ async function loadArchiveList() {
   setStatus("archive-status", "info", "불러오는 중...");
   const { data, error } = await client
     .from("results")
-    .select("id, subject_id, created_at, total_score, responses")
+    .select("id, subject_id, created_at, raw_score, responses")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -776,12 +927,11 @@ async function loadArchiveList() {
   setStatus("archive-status", "", "");
 
   for (const row of data) {
-    const total = (row.responses || []).length;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${row.subject_id}</td>
       <td>${new Date(row.created_at).toLocaleString("ko-KR")}</td>
-      <td>${row.total_score} / ${total}</td>
+      <td>${row.raw_score ?? "-"}</td>
       <td><button class="btn btn-secondary btn-sm">보기</button></td>
     `;
     tr.querySelector("button").addEventListener("click", () => viewArchivedRecord(row.id));
@@ -793,11 +943,7 @@ async function viewArchivedRecord(rowId) {
   const client = getSupabaseClient();
   if (!client) return;
   setStatus("archive-status", "info", "불러오는 중...");
-  const { data, error } = await client
-    .from("results")
-    .select("*")
-    .eq("id", rowId)
-    .single();
+  const { data, error } = await client.from("results").select("*").eq("id", rowId).single();
   if (error) {
     setStatus("archive-status", "error", "결과를 불러오지 못했습니다: " + error.message);
     return;
@@ -809,6 +955,11 @@ async function viewArchivedRecord(rowId) {
     examiner: data.examiner || "",
   };
   state.responses = data.responses;
+  state.admin = {
+    basalSeq: data.basal_seq,
+    ceilingSeq: data.ceiling_seq,
+    totalErrors: data.ceiling_seq != null && data.raw_score != null ? (data.ceiling_seq - data.raw_score) : null,
+  };
   state.viewingArchive = true;
   const results = computeResults();
   renderResults(results);
@@ -826,5 +977,4 @@ document.getElementById("btn-back-to-archive").addEventListener("click", () => {
   loadArchiveList();
 });
 
-/* ---------- 초기화 ---------- */
 initSupabaseAuth();

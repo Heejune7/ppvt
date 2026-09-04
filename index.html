@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>명사·동사 그림어휘력 검사</title>
+<title>명사·동사·형용사 그림어휘력 검사</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -18,8 +18,8 @@
         <button id="btn-open-settings" class="btn btn-ghost btn-sm btn-icon" type="button" title="Supabase 연결 설정">⚙ 설정</button>
       </div>
     </div>
-    <h1>명사·동사 그림어휘력 검사</h1>
-    <p class="subtitle">Picture Vocabulary Test for Nouns and Verbs — 20문항 프로토타입</p>
+    <h1>명사·동사·형용사 그림어휘력 검사</h1>
+    <p class="subtitle">수용어휘력 검사 — 150문항 개발판 (만 2;6~16;11)</p>
 
     <form id="intro-form">
       <div class="field">
@@ -27,8 +27,9 @@
         <input type="text" id="subject-id" name="subjectId" required autocomplete="off" placeholder="예: P001">
       </div>
       <div class="field">
-        <label for="birth-yearmonth">생년월 (연-월)</label>
-        <input type="month" id="birth-yearmonth" name="birthYearMonth">
+        <label for="birth-yearmonth">생년월 (연-월) <span class="req">*</span></label>
+        <input type="month" id="birth-yearmonth" name="birthYearMonth" required>
+        <p class="field-hint">생활연령에 따라 시작 문항이 자동으로 결정됩니다.</p>
       </div>
       <div class="field">
         <label for="gender">성별</label>
@@ -46,6 +47,7 @@
       <div class="notice">
         검사자가 목표어휘를 구어로 들려주고, 피검자가 화면의 그림 4개 중 해당하는 그림을 선택합니다.
         피검자가 반응하지 않으면 검사자는 <strong>무반응</strong> 버튼을 눌러 다음 문항으로 진행합니다.
+        생활연령에 따라 시작 문항이 정해지며, 기저점·최고한계점 규칙에 따라 실시 문항이 자동으로 조정됩니다(잠정 규칙).
       </div>
 
       <button type="submit" class="btn btn-primary btn-lg">검사 시작</button>
@@ -130,8 +132,9 @@
 <section id="screen-test" class="screen">
   <div class="test-header">
     <div class="progress-info">
-      <span id="item-counter">문항 1 / 20</span>
+      <span id="item-counter">문항 1 / 150 (순번)</span>
       <div class="progress-bar-track"><div id="progress-bar-fill" class="progress-bar-fill"></div></div>
+      <span id="admin-phase-note" class="admin-phase-note"></span>
     </div>
     <div class="item-meta">
       <span id="item-wordclass-badge" class="badge"></span>
@@ -159,26 +162,38 @@
 
     <div class="summary-grid">
       <div class="stat-card stat-primary">
-        <span class="stat-label">총점</span>
-        <span id="stat-total" class="stat-value">0 / 20</span>
+        <span class="stat-label">총점(원점수)</span>
+        <span id="stat-total" class="stat-value">0</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">명사 하위점수</span>
-        <span id="stat-noun" class="stat-value">0 / 15</span>
+        <span id="stat-noun" class="stat-value">0 / 0</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">동사 하위점수</span>
-        <span id="stat-verb" class="stat-value">0 / 5</span>
+        <span id="stat-verb" class="stat-value">0 / 0</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">형용사 하위점수</span>
+        <span id="stat-adj" class="stat-value">0 / 0</span>
       </div>
       <div class="stat-card">
         <span class="stat-label">평균 반응시간</span>
         <span id="stat-rt" class="stat-value">0.0초</span>
       </div>
+      <div class="stat-card">
+        <span class="stat-label">기저점 / 최고한계점</span>
+        <span id="stat-basal-ceiling" class="stat-value stat-value-sm">- / -</span>
+      </div>
+    </div>
+
+    <div class="norm-note">
+      표준점수 · 백분위 · 어휘발달연령: <strong>규준 미확보</strong> (표준화 이전 단계)
     </div>
 
     <div class="charts-grid">
       <div class="chart-card">
-        <h2>범주별 정확도</h2>
+        <h2>범주별 정확도 (실시 문항 기준)</h2>
         <canvas id="chart-category"></canvas>
       </div>
       <div class="chart-card">
@@ -197,7 +212,7 @@
         <table id="detail-table">
           <thead>
             <tr>
-              <th>번호</th><th>어종</th><th>범주</th><th>목표어휘</th>
+              <th>순번</th><th>문항ID</th><th>어종</th><th>범주</th><th>목표어휘</th>
               <th>선택 위치</th><th>선택 어휘</th><th>오답유형</th><th>정오</th><th>반응시간(ms)</th>
             </tr>
           </thead>
@@ -209,7 +224,7 @@
     <div id="results-save-status" class="status-msg"></div>
     <div class="export-bar">
       <button id="btn-export-excel" class="btn btn-primary">엑셀로 내보내기 (.xlsx)</button>
-      <button id="btn-export-csv" class="btn btn-secondary">CSV로 내보내기</button>
+      <button id="btn-export-csv" class="btn btn-secondary">CSV로 내보내기 (문항별+요약 2개 파일)</button>
       <button id="btn-save-supabase" class="btn btn-secondary">Supabase에 저장</button>
       <button id="btn-back-to-archive" class="btn btn-ghost" style="display:none;">저장된 목록으로</button>
       <button id="btn-restart" class="btn btn-ghost">새 검사 시작</button>

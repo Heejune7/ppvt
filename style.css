@@ -50,6 +50,7 @@ html, body {
 .field { margin-bottom: 16px; }
 .field label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
 .field .req { color: var(--color-incorrect); }
+.field-hint { margin: 6px 0 0; font-size: 0.78rem; color: var(--color-text-muted); }
 .field input, .field select {
   width: 100%;
   padding: 10px 12px;
@@ -198,6 +199,7 @@ html, body {
   font-weight: 700;
 }
 .badge-muted { background: #eceff3; color: var(--color-text-muted); }
+.admin-phase-note { display: block; margin-top: 6px; font-size: 0.78rem; color: var(--color-text-muted); }
 
 .prompt-area { text-align: center; margin-bottom: 24px; }
 .prompt-instruction { color: var(--color-text-muted); font-size: 0.9rem; margin: 0 0 6px; }
@@ -232,6 +234,22 @@ html, body {
 }
 .option-tile:hover { border-color: var(--color-primary); transform: translateY(-2px); }
 .option-tile img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.option-tile .img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  padding: 8px;
+  border-radius: 10px;
+  background: #f4f6fa;
+  border: 1px dashed #c7cfdb;
+  color: #566;
+  font-weight: 700;
+  font-size: 1.1rem;
+  word-break: keep-all;
+}
 .option-tile.selected-correct { border-color: var(--color-correct); background: #eafaf0; }
 .option-tile.selected-incorrect { border-color: var(--color-incorrect); background: #fdecec; }
 .option-tile.reveal-correct { border-color: var(--color-correct); }
@@ -262,6 +280,18 @@ html, body {
 .stat-primary { background: var(--color-primary); color: #fff; }
 .stat-label { font-size: 0.82rem; opacity: 0.8; font-weight: 600; }
 .stat-value { font-size: 1.7rem; font-weight: 800; }
+.stat-value-sm { font-size: 1.1rem; }
+
+.norm-note {
+  background: #f4f6fa;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  margin: -8px 0 24px;
+}
+.norm-note strong { color: var(--color-text); }
 
 .charts-grid {
   display: grid;
