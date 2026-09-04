@@ -560,14 +560,20 @@ document.getElementById("btn-restart").addEventListener("click", () => {
    4. Supabase 연동 (로그인 + 결과 저장 / 조회)
    ============================================================ */
 const SB_CONFIG_KEY = "ppvt_supabase_config";
+// publishable key는 클라이언트에 공개되도록 설계된 값이라 기본값으로 넣어도 안전하다.
+// 실제 데이터 비공개 여부는 Supabase Row Level Security + 로그인 여부로 결정된다.
+const SB_DEFAULTS = {
+  url: "https://xchqwszsiqtsxcnnijhh.supabase.co",
+  anonKey: "sb_publishable_Jckhv23SU2i0BUBIfS7k4Q_480Xtre0",
+};
 
 function loadSupabaseConfig() {
   try {
     const raw = localStorage.getItem(SB_CONFIG_KEY);
-    if (!raw) return { url: "", anonKey: "" };
-    return { url: "", anonKey: "", ...JSON.parse(raw) };
+    if (!raw) return { ...SB_DEFAULTS };
+    return { ...SB_DEFAULTS, ...JSON.parse(raw) };
   } catch {
-    return { url: "", anonKey: "" };
+    return { ...SB_DEFAULTS };
   }
 }
 
